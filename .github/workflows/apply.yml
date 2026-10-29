@@ -1,0 +1,60 @@
+# Job Board applier: submits the applications you approved in your Google Sheet.
+# Runs hourly on GitHub's free runners. Keep this repository PRIVATE.
+# Secrets (Settings → Secrets and variables → Actions): SHEET_WEBAPP_URL, APPLIER_SECRET
+name: Job Board applier
+on:
+  schedule:
+    - cron: "17 */3 * * *"  # backup only: the Sheet starts the applier instantly when something is queued
+  workflow_dispatch: {}
+concurrency:
+  group: jjboard-applier   # never two runs at once
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check secrets are configured
+        id: cfg
+        env:
+          URL: ${{ secrets.SHEET_WEBAPP_URL }}
+        run: if [ -z "$URL" ]; then echo "configured=no" >> "$GITHUB_OUTPUT"; echo "Secrets not set yet; nothing to do."; else echo "configured=yes" >> "$GITHUB_OUTPUT"; fi
+      - name: Any approved jobs waiting?
+        id: q
+        if: steps.cfg.outputs.configured == 'yes'
+        env:
+          URL: ${{ secrets.SHEET_WEBAPP_URL }}
+          SECRET: ${{ secrets.APPLIER_SECRET }}
+        run: |
+          body=$(curl -sL --get --data-urlencode "action=queue" --data-urlencode "secret=$SECRET" "$URL" || true)
+          n=$(printf '%s' "$body" | python3 -c "
+          import sys, json
+          raw = sys.stdin.read()
+          try:
+              d = json.loads(raw)
+          except Exception:
+              print('The Sheet web app did not answer with data. Check: Deploy > Manage deployments > Web app, Who has access = Anyone. First characters: ' + raw[:120].replace(chr(10), ' '), file=sys.stderr); print(0); sys.exit()
+          if 'error' in d:
+              print('The Sheet refused: ' + d['error'] + ' (check the APPLIER_SECRET secret)', file=sys.stderr); print(0); sys.exit()
+          print('Sheet web app code version: ' + d.get('version', 'OLD - redeploy the web app (Deploy > Manage deployments > Edit > New version)'), file=sys.stderr)
+          print(len(d.get('items', [])))")
+          echo "waiting=$n" >> "$GITHUB_OUTPUT"; echo "$n approved application(s) waiting"
+      - uses: actions/checkout@v4
+        if: steps.q.outputs.waiting != '0' && steps.q.outputs.waiting != ''
+      - uses: actions/setup-python@v5
+        if: steps.q.outputs.waiting != '0' && steps.q.outputs.waiting != ''
+        with:
+          python-version: "3.12"
+      - name: Install
+        if: steps.q.outputs.waiting != '0' && steps.q.outputs.waiting != ''
+        run: pip install -q -r applier/requirements.txt   # browser: Google Chrome is preinstalled on GitHub's Ubuntu runners
+      - name: Apply to approved jobs
+        if: steps.q.outputs.waiting != '0' && steps.q.outputs.waiting != ''
+        env:
+          SHEET_WEBAPP_URL: ${{ secrets.SHEET_WEBAPP_URL }}
+          APPLIER_SECRET: ${{ secrets.APPLIER_SECRET }}
+        run: |
+          if [ -x /usr/bin/google-chrome ]; then export CHROMIUM_PATH=/usr/bin/google-chrome; else python -m playwright install --with-deps chromium; fi
+          python applier/apply.py

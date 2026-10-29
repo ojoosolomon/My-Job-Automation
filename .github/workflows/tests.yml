@@ -1,0 +1,29 @@
+# Runs every test on each push: the Sheet logic (Node) and the applier against replica application forms (Python).
+name: Tests
+on:
+  push:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Sheet app tests
+        run: |
+          cd sheet-app && bash build.sh && cd ..
+          git diff --exit-code sheet-app/Code.gs || { echo "Code.gs is out of date: run sheet-app/build.sh and commit it"; exit 1; }
+          for t in sheet-app/test/*.test.js; do node "$t"; done
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Applier tests
+        run: |
+          pip install -q -r applier/requirements-dev.txt
+          if [ -x /usr/bin/google-chrome ]; then export CHROMIUM_PATH=/usr/bin/google-chrome; else python -m playwright install --with-deps chromium; fi
+          cd applier/tests && python -m pytest -q

@@ -1,0 +1,24 @@
+name: Form test run (never submits)
+on:
+  workflow_dispatch:
+    inputs:
+      boards:
+        description: "ats:board list, e.g. greenhouse:oscar lever:lyrahealth ashby:ramp"
+        default: "greenhouse:oscar lever:lyrahealth ashby:ramp"
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -q -r applier/requirements.txt
+      - name: Fill real forms with placeholder details (Submit is never clicked)
+        env:
+          PROBE_BOARDS: ${{ inputs.boards }}
+        run: |
+          if [ -x /usr/bin/google-chrome ]; then export CHROMIUM_PATH=/usr/bin/google-chrome; else python -m playwright install --with-deps chromium; fi
+          PROBE_PER_BOARD=1 python -u applier/probe.py
