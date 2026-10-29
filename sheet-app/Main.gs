@@ -9,9 +9,10 @@
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-29d';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-10-29e';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
-  CANNOT: 'Cannot apply', PIPELINE: 'Pipeline' };
+  CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
+var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back
 var APPLIED_BEFORE_COLS = ['Employer', 'Job URL', 'Applied on'];  // applications sent before this Sheet existed
 var ANSWER_COLS = ['Question', 'Your answer', 'Waiting applications', 'First seen', 'Why this answer', 'Pattern'];
 var JOB_COLS = ['Job ID', 'Found', 'Employer', 'Title', 'Location', 'Open to Nigeria', 'Title match', 'ATS', 'Board', 'Job URL',
@@ -64,6 +65,7 @@ function onOpen() {
     .addItem('Send today\'s summary email now', 'dailySummary')
     .addItem('Send your update now (normally Tue and Fri)', 'herUpdate')
     .addSeparator()
+    .addItem('Remove skipped / out-of-scope jobs now', 'removeOutOfScopeMenu')
     .addItem('Start over (clear jobs and applications)', 'startOver')
     .addItem('Test Gemini key', 'testGemini')
     .addItem('Connect GitHub for instant applying', 'connectGitHub')
@@ -95,6 +97,7 @@ function setup() {
   ensureSheet_(TAB.ANSWERS, ANSWER_COLS);
   seedBank_();
   ensureSheet_('Applied before', APPLIED_BEFORE_COLS);
+  ensureSheet_(TAB.REMOVED, REMOVED_COLS);
   ensureSheet_(TAB.LOG, ['Time', 'Event', 'Details']);
   viewTabs_();
 
@@ -136,7 +139,7 @@ function viewTabs_() {
   var cannot = ss.getSheetByName(TAB.CANNOT) || ss.insertSheet(TAB.CANNOT);
   cannot.getRange('A1').setFormula('=IFERROR(QUERY(Applications!A1:' + last + ', "select ' + [c('Employer'), c('Title'), c('Status'),
     c('Result'), c('Job URL'), c('Resume PDF'), c('Cover letter PDF'), c('Updated')].join(', ') + ' where ' + c('Status') +
-    " matches 'NEEDS YOU|APPLY YOURSELF|NOT SENT|UNCERTAIN|NEEDS YOUR CHECK|EXPIRED|SKIPPED' order by " + c('Updated') +
+    " matches 'NEEDS YOU|APPLY YOURSELF|NOT SENT|UNCERTAIN|NEEDS YOUR CHECK|EXPIRED' order by " + c('Updated') +
     ' desc", 1), "Nothing here yet: every application so far went through.")');
   var pipe = ss.getSheetByName(TAB.PIPELINE) || ss.insertSheet(TAB.PIPELINE);
   pipe.getRange('A1:B1').setValues([['Stage', 'Applications']]).setFontWeight('bold');
@@ -655,11 +658,13 @@ function findJobs() {
   ensureColumns_(TAB.JOBS, JOB_COLS);
   removeLowFitJobs_(settings_().minFit);  // first, so a removed job can come back if it qualifies later
   removeOldJobs_(settings_().maxAge);
+  removeOutOfScope_();
   var p = profile_();
   var jobs = table_(TAB.JOBS);
   var seen = {};
   jobs.rows.forEach(function (r) { seen[r[jobs.col['Job URL']]] = true; });
   sentBefore_().forEach(function (x) { seen[x.url] = true; });  // applied to before a "Start over": never again
+  removedJobs_().forEach(function (x) { seen[x] = true; });  // removed as out of scope: never listed again
   ensureColumns_(TAB.COMPANIES, COMPANY_COLS);
   var props = PropertiesService.getScriptProperties();
   var working = table_(TAB.COMPANIES).rows.filter(function (r) { return r[2] && !/^not found/.test(r[4]); }).length;
@@ -758,6 +763,59 @@ function jobRow_(jobs, values, score, extra) {
 }
 
 /** Removes Jobs rows below the minimum fit that never became an application. */
+/**
+ * Deletes what is out of scope: Jobs rows marked SKIPPED (not open to Nigeria, too old, below the minimum fit, employer
+ * applied to recently...) or not open to Nigeria, and Applications rows marked SKIPPED. Each is written to the hidden
+ * "Removed jobs" tab, so the search never lists it again. Jobs with a real application are never touched.
+ */
+function removeOutOfScope_() {
+  ensureSheet_(TAB.REMOVED, REMOVED_COLS);
+  var removed = SpreadsheetApp.getActive().getSheetByName(TAB.REMOVED);
+  try { if (!removed.isSheetHidden()) removed.hideSheet(); } catch (e) { /* hiding is only for tidiness */ }
+  var apps = table_(TAB.APPS), jobs = table_(TAB.JOBS), now = new Date(), n = 0, a = 0, log = [];
+  var used = {};
+  apps.rows.forEach(function (r) { if (r[apps.col['Status']] !== 'SKIPPED') used[r[apps.col['Job ID']]] = true; });
+  for (var i = apps.rows.length - 1; i >= 0; i--) {
+    var ar = apps.rows[i];
+    if (ar[apps.col['Status']] !== 'SKIPPED') continue;
+    log.push([ar[apps.col['Job URL']], seenKey_(ar[apps.col['Employer']], ar[apps.col['Title']]), ar[apps.col['Employer']],
+      ar[apps.col['Title']], now, 'Application skipped: ' + String(ar[apps.col['Result']] || '').slice(0, 150)]);
+    apps.sheet.deleteRow(i + 2);
+    a++;
+  }
+  for (var j = jobs.rows.length - 1; j >= 0; j--) {
+    var r = jobs.rows[j], st = String(r[jobs.col['Status']] || '');
+    var out = /^SKIPPED/.test(st) || (st === 'NEW' && r[jobs.col['Open to Nigeria']] === 'no');
+    if (!out || used[r[jobs.col['Job ID']]]) continue;
+    log.push([r[jobs.col['Job URL']], seenKey_(r[jobs.col['Employer']], r[jobs.col['Title']]), r[jobs.col['Employer']],
+      r[jobs.col['Title']], now, (st === 'NEW' ? 'Not open to Nigeria: ' + r[jobs.col['Why eligible']] : st).slice(0, 200)]);
+    jobs.sheet.deleteRow(j + 2);
+    n++;
+  }
+  if (log.length) removed.getRange(removed.getLastRow() + 1, 1, log.length, REMOVED_COLS.length).setValues(log);
+  if (n || a) log_('OUT_OF_SCOPE_REMOVED', n + ' job(s) and ' + a + ' skipped application(s) removed (listed in the hidden "Removed jobs" tab)');
+  return n + a;
+}
+
+/** Job URLs and employer+title keys removed in the last 60 days (older ones are forgotten: the job is long gone). */
+function removedJobs_() {
+  var sh = SpreadsheetApp.getActive().getSheetByName(TAB.REMOVED);
+  if (!sh || sh.getLastRow() < 2) return [];
+  var out = [], cutoff = Date.now() - 60 * 86400e3;
+  sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues().forEach(function (r) {
+    if (r[4] && new Date(r[4]).getTime() < cutoff) return;
+    if (r[0]) out.push(String(r[0]));
+    if (r[1]) out.push(String(r[1]));
+  });
+  return out;
+}
+
+function removeOutOfScopeMenu() {
+  var n = removeOutOfScope_();
+  SpreadsheetApp.getUi().alert(n ? n + ' skipped / out-of-scope row(s) removed. They will not be listed again.' :
+    'Nothing to remove: every listed job is in scope.');
+}
+
 /** Removes NEW Jobs rows posted more than `hours` ago (or with no posting date): they are no longer fresh. */
 function removeOldJobs_(hours) {
   var jobs = table_(TAB.JOBS), col = jobs.col['Posted'], n = 0;
@@ -1224,6 +1282,7 @@ function prepareNew() {
     why.notOpen + ' not open to Nigeria (Gemini check), ' + why.sameEmployer + ' employer applied to in the last 30 days' +
     (why.yoursLater ? '; ' + why.yoursLater + ' manual-apply job(s) left for later' : '') + (why.stopped ? '; stopped: ' + why.stopped : '') +
     (cands.length > 3 && !why.stopped ? '; at most 3 are prepared per run, the rest follow every hour' : '');
+  removeOutOfScope_();
   log_('PREPARE', summary);
   return summary;
 }

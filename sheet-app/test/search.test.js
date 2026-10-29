@@ -42,16 +42,22 @@ const pages = {
 };
 const html = { 'https://remotive.com/remote-jobs/customer-support/cs-11':
   '<a class="apply" href="https://boards.greenhouse.io/globex/jobs/777?utm_source=remotive">Apply for this position</a>' };
+const removedRows = [['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason']];
+const removed = { rows: removedRows, getLastRow: () => removedRows.length, getLastColumn: () => 6, isSheetHidden: () => true, hideSheet() {},
+  getDataRange: () => ({ getValues: () => removedRows.map(x => x.slice()) }),
+  getRange: (r, c, nr, nc) => ({ setValues: (v) => { v.forEach((x, k) => { removedRows[r - 1 + k] = x; }); },
+    getValues: () => removedRows.slice(r - 1, r - 1 + (nr || 1)).map(x => x.slice(c - 1, c - 1 + (nc || 6))), setFontWeight() {} }) };
+const apps = sheet([['App ID', 'Job ID', 'Employer', 'Title', 'Job URL', 'Status', 'Result']]);
 const fetch = (url) => ({ getResponseCode: () => (pages[url] || html[url]) ? 200 : 404, getHeaders: () => ({}),
   getContentText: () => pages[url] ? JSON.stringify(pages[url]) : (html[url] || '') });
 const env = {
-  SpreadsheetApp: { getActive: () => ({ getSheetByName: (n) => ({ Jobs: jobs, Companies: companies, Profile: profile, Log: log })[n] }) },
+  SpreadsheetApp: { getActive: () => ({ getSheetByName: (n) => ({ Jobs: jobs, Companies: companies, Profile: profile, Log: log, Applications: apps, 'Removed jobs': removed })[n] }) },
   PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => store[k] || null, setProperty: (k, v) => { store[k] = v; } }) },
   UrlFetchApp: { fetch, fetchAll: (reqs) => reqs.map(r => fetch(r.url)) },
   Utilities: { computeDigest: (a, t) => Array.from(Buffer.from(String(t)).slice(-32)), DigestAlgorithm: {}, Charset: {}, formatDate: () => '2026-10-28' },
   Session: { getScriptTimeZone: () => 'UTC' }, DriveApp: {}, MailApp: {}, LockService: {}, ContentService: {}, XmlService: {}
 };
-const api = new Function(...Object.keys(env), src + '\nreturn { findJobs };')(...Object.values(env));
+const api = new Function(...Object.keys(env), src + '\nreturn { findJobs, removeOutOfScope_ };')(...Object.values(env));
 const added = api.findJobs();
 const col = (n) => JOB.indexOf(n);
 const got = jobs.rows.slice(1).map(r => ({ title: r[col('Title')], employer: r[col('Employer')], open: r[col('Open to Nigeria')],
@@ -75,4 +81,12 @@ assert(!got.some(r => /II$|III$/.test(r.title) && r.title !== 'Executive Assista
 assert(/posted more than 24 h ago or no date: 3/.test(log.rows[log.rows.length - 1][2]), log.rows[log.rows.length - 1][2]);
 assert(companies.rows.some(r => r[2] === 'search:executive assistant' && r[4] && /^(ok|not found)|added/.test(r[4]) || r[2] === 'search:executive assistant'),
   'job sources new in this version are added to an existing Companies tab');
+// out-of-scope jobs are deleted and never listed again
+const st = col('Status'), ea2 = jobs.rows.findIndex(r => r[col('Title')] === 'Executive Assistant II');
+jobs.rows[ea2][st] = 'SKIPPED — Not open to Nigeria: UK residents only';
+assert.equal(api.removeOutOfScope_(), 1);
+assert(!jobs.rows.some(r => r[col('Title')] === 'Executive Assistant II'), 'skipped job deleted');
+assert.equal(removed.rows.length, 2, 'and remembered in the hidden Removed jobs tab');
+api.findJobs();
+assert(!jobs.rows.some(r => r[col('Title')] === 'Executive Assistant II'), 'a removed job is not listed again');
 console.log('search rules tests passed');

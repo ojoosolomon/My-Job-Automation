@@ -117,6 +117,12 @@ left out too. Older jobs still waiting in the Jobs tab are removed at the next s
 before its turn is marked **SKIPPED — posted more than 24 hours ago**. To change the limit (for example 72 for three
 days), use **Job Board → Set maximum job age (hours)**.
 
+**Out-of-scope jobs are deleted.** Jobs marked **SKIPPED** (not open to Nigeria, posted more than 24 hours ago, below
+the minimum fit, or an employer you applied to in the last 30 days) are deleted from the Jobs and Applications tabs after
+every search and every prepare run. They are listed in a hidden **Removed jobs** tab so they are never listed again (to see
+it: right-click any tab name → **Show sheet** → Removed jobs). To delete them straight away: **Job Board → Remove skipped /
+out-of-scope jobs now**. Jobs that already have a real application are never deleted.
+
 **Statuses in the Applications tab:**
 
 | Status | Meaning |
