@@ -151,8 +151,10 @@ are sent again by themselves.
   with copies of each board's data and replica application forms. The live job-board feeds could not be reached from
   the build environment. Watch the first runs: any source that fails is named in the **Log** tab after "Find jobs"
   and in the **Companies** tab Status column.
-- **Company list is best-effort.** About 150 companies are guessed on Greenhouse, Lever and Ashby. Only boards that exist
-  are added. Add your own in the **Companies** tab: ats = greenhouse, lever or ashby, board = the name in the
+- **Company list is best-effort.** About 360 companies (worldwide-remote employers plus companies based in the US, UK,
+  Canada, Germany, Spain, Australia and Nigeria) are guessed on Greenhouse, Lever and Ashby. Only boards that exist
+  are added. Only their jobs open to someone in Nigeria are kept. The list is checked a part at a time across the first
+  few searches. Add your own in the **Companies** tab: ats = greenhouse, lever or ashby, board = the name in the
   company's job-board link.
 - **LinkedIn is never automated** (it breaks LinkedIn's rules and can get your account banned). Add a LinkedIn job with
   **Job Board → Add a job from a link…** and the documents are prepared for you to submit.

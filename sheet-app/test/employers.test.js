@@ -17,7 +17,8 @@ const env = {
   SpreadsheetApp: { getActive: () => ({ getSheetByName: (n) => n === 'Companies' ? companies : log }) },
   PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => store[k] || null, setProperty: (k, v) => { store[k] = v; } }) },
   UrlFetchApp: { fetchAll: (reqs) => reqs.map(r => ({ getResponseCode: () => exists[r.url] ? 200 : 404, getContentText: () => exists[r.url] || '' })) },
-  Utilities: {}, Session: {}, DriveApp: {}, MailApp: {}, LockService: {}, ContentService: {}
+  Utilities: { computeDigest: (a, t) => Array.from(Buffer.from(String(t)).slice(-32)), DigestAlgorithm: {}, Charset: {} },
+  Session: {}, DriveApp: {}, MailApp: {}, LockService: {}, ContentService: {}
 };
 const api = new Function(...Object.keys(env), src + '\nreturn { findEmployers_, boardGuesses_ };')(...Object.values(env));
 assert.deepEqual(api.boardGuesses_('Chipper Cash'), ['chippercash', 'chipper-cash', 'chippercashhq', 'chippercashafrica']);

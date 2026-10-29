@@ -517,7 +517,7 @@ if (typeof module !== 'undefined') {
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-29c';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-10-29d';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline' };
 var APPLIED_BEFORE_COLS = ['Employer', 'Job URL', 'Applied on'];  // applications sent before this Sheet existed
@@ -829,9 +829,20 @@ var STARTER_COMPANIES = [
   ['We Work Remotely: customer support', 'weworkremotely', 'remote-customer-support-jobs', 'weworkremotely.com'],
   ['We Work Remotely: management and finance', 'weworkremotely', 'remote-management-and-finance-jobs', 'weworkremotely.com'],
   ['We Work Remotely: all other', 'weworkremotely', 'all-other-remote-jobs', 'weworkremotely.com'],
-  ['Working Nomads: latest remote jobs', 'workingnomads', 'latest', 'workingnomads.com']
+  ['Working Nomads: latest remote jobs', 'workingnomads', 'latest', 'workingnomads.com'],
+  ['Remotive: search executive assistant', 'remotive', 'search:executive assistant', 'remotive.com'],
+  ['Remotive: search virtual assistant', 'remotive', 'search:virtual assistant', 'remotive.com'],
+  ['Remotive: search operations', 'remotive', 'search:operations', 'remotive.com'],
+  ['Remotive: search automation', 'remotive', 'search:automation', 'remotive.com'],
+  ['Jobicy: support jobs', 'jobicy', 'industry=supporting', 'jobicy.com'],
+  ['Jobicy: admin jobs', 'jobicy', 'industry=admin', 'jobicy.com'],
+  ['Jobicy: finance jobs', 'jobicy', 'industry=accounting-finance', 'jobicy.com'],
+  ['Jobicy: management jobs', 'jobicy', 'industry=management', 'jobicy.com'],
+  ['Jobicy: assistant jobs', 'jobicy', 'tag=assistant', 'jobicy.com'],
+  ['Arbeitnow (Germany/Europe): page 1', 'arbeitnow', '1', 'arbeitnow.com'],
+  ['Arbeitnow (Germany/Europe): page 2', 'arbeitnow', '2', 'arbeitnow.com']
 ];
-var AGGREGATORS = ['remotive', 'himalayas', 'jobicy', 'remoteok', 'weworkremotely', 'workingnomads'];
+var AGGREGATORS = ['remotive', 'himalayas', 'jobicy', 'remoteok', 'weworkremotely', 'workingnomads', 'arbeitnow'];
 
 function stripHtml_(html) {
   return String(html || '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"')
@@ -839,15 +850,35 @@ function stripHtml_(html) {
     .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
 }
 
-function fetchBoard_(ats, board) {
-  if (AGGREGATORS.indexOf(ats) >= 0) return fetchFeed_(ats, board);
-  var url = {
+function boardUrl_(ats, board) {
+  return {
     greenhouse: 'https://boards-api.greenhouse.io/v1/boards/' + board + '/jobs?content=true&pay_transparency=true',
     lever: 'https://api.lever.co/v0/postings/' + board + '?mode=json',
     ashby: 'https://api.ashbyhq.com/posting-api/job-board/' + board + '?includeCompensation=true'
   }[ats];
+}
+
+/**
+ * Downloads many Greenhouse/Lever/Ashby boards at once (20 at a time), much faster than one by one.
+ * Returns {"ats:board": response}; stops after `seconds` and leaves the rest to be fetched one by one.
+ */
+function prefetchBoards_(list, seconds) {
+  var out = {}, start = Date.now(), todo = list.filter(function (x) { return boardUrl_(x.ats, x.board); });
+  for (var i = 0; i < todo.length && Date.now() - start < seconds * 1000; i += 20) {
+    var batch = todo.slice(i, i + 20);
+    try {
+      UrlFetchApp.fetchAll(batch.map(function (x) { return { url: boardUrl_(x.ats, x.board), muteHttpExceptions: true }; }))
+        .forEach(function (res, k) { out[batch[k].ats + ':' + batch[k].board] = res; });
+    } catch (e) { /* one bad address fails the batch: those boards are fetched one by one */ }
+  }
+  return out;
+}
+
+function fetchBoard_(ats, board, prefetched) {
+  if (AGGREGATORS.indexOf(ats) >= 0) return fetchFeed_(ats, board);
+  var url = boardUrl_(ats, board);
   if (!url) return [];
-  var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  var res = (prefetched || {})[ats + ':' + board] || UrlFetchApp.fetch(url, { muteHttpExceptions: true });
   if (res.getResponseCode() !== 200) throw new Error(ats + ':' + board + ' HTTP ' + res.getResponseCode());
   var d = JSON.parse(res.getContentText());
   if (ats === 'greenhouse') return (d.jobs || []).map(function (j) {
@@ -883,15 +914,17 @@ function fetchFeed_(ats, board) {
     return (min || max) && (!cur || /usd|\$/i.test(String(cur))) ? { min: min, max: max, interval: 'year' } : null;
   };
   if (ats === 'remotive') {
-    return (getJson_('https://remotive.com/api/remote-jobs?category=' + encodeURIComponent(board)).jobs || []).map(function (j) {
+    // Board: a category ("customer-support") or a search ("search:executive assistant")
+    var rq = /^search:/.test(board) ? 'search=' + encodeURIComponent(board.slice(7).trim()) : 'category=' + encodeURIComponent(board);
+    return (getJson_('https://remotive.com/api/remote-jobs?' + rq).jobs || []).map(function (j) {
       return { id: 'rm-' + j.id, title: j.title, employer: j.company_name, location: 'Remote - ' + (j.candidate_required_location || ''),
         url: j.url, apply: j.url, text: stripHtml_(j.description) + (j.salary ? '\nSalary: ' + j.salary : ''),
         posted: j.publication_date, salary: null, workplaceType: 'remote' };
     });
   }
-  if (ats === 'himalayas') {  // newest 200 jobs, 20 per page
+  if (ats === 'himalayas') {  // newest 500 jobs, 20 per page
     var pages = [];
-    for (var off = 0; off < 200; off += 20) pages.push({ url: 'https://himalayas.app/jobs/api?limit=20&offset=' + off, muteHttpExceptions: true });
+    for (var off = 0; off < 500; off += 20) pages.push({ url: 'https://himalayas.app/jobs/api?limit=20&offset=' + off, muteHttpExceptions: true });
     var out = [];
     UrlFetchApp.fetchAll(pages).forEach(function (r) {
       if (r.getResponseCode() !== 200) return;
@@ -908,7 +941,9 @@ function fetchFeed_(ats, board) {
     return out;
   }
   if (ats === 'jobicy') {
-    return (getJson_('https://jobicy.com/api/v2/remote-jobs?count=' + (Number(board) || 100)).jobs || []).map(function (j) {
+    // Board: a number (how many of the newest jobs) or a filter such as "tag=assistant" or "industry=supporting"
+    var q = /^\d+$/.test(board) ? 'count=' + board : 'count=100&' + board;
+    return (getJson_('https://jobicy.com/api/v2/remote-jobs?' + q).jobs || []).map(function (j) {
       return { id: 'jc-' + j.id, title: j.jobTitle, employer: j.companyName, location: 'Remote - ' + (j.jobGeo || ''),
         url: j.url, apply: j.url, text: stripHtml_(j.jobDescription || j.jobExcerpt), posted: j.pubDate,
         salary: usd(j.annualSalaryMin, j.annualSalaryMax, j.salaryCurrency), workplaceType: 'remote' };
@@ -932,6 +967,13 @@ function fetchFeed_(ats, board) {
         location: 'Remote - ' + (it.getChildText('region') || ''), url: link, apply: link, text: stripHtml_(it.getChildText('description')),
         posted: it.getChildText('pubDate') ? new Date(it.getChildText('pubDate')) : '', salary: null, workplaceType: 'remote' };
     });
+  }
+  if (ats === 'arbeitnow') {  // Germany/Europe job board: remote jobs only
+    return (getJson_('https://www.arbeitnow.com/api/job-board-api?page=' + (Number(board) || 1)).data || []).filter(function (j) { return j.remote; })
+      .map(function (j) {
+        return { id: 'an-' + j.slug, title: j.title, employer: j.company_name, location: 'Remote - ' + (j.location || ''), url: j.url,
+          apply: j.url, text: stripHtml_(j.description), posted: j.created_at, salary: null, workplaceType: 'remote' };
+      });
   }
   if (ats === 'workingnomads') {
     return getJson_('https://www.workingnomads.com/api/exposed_jobs/').map(function (j) {
@@ -992,7 +1034,8 @@ function ashbyPay_(c) {
   return parts.length ? { min: parts[0].minValue, max: parts[0].maxValue, interval: parts[0].interval } : null;
 }
 
-// Companies that hire remotely worldwide or in Africa (operations, assistants, support, finance, automation). Their
+// Companies that hire remotely worldwide or in Africa (operations, assistants, support, finance, automation), and companies
+// based in the US, UK, Canada, Germany, Spain, Australia and Nigeria. Their
 // job-board names are guessed in several spellings on Greenhouse, Lever and Ashby; only boards that really exist and have
 // open jobs are added to Companies. Every job is still checked for whether it is open to someone living in Nigeria.
 var CANDIDATE_EMPLOYERS = [
@@ -1018,7 +1061,42 @@ var CANDIDATE_EMPLOYERS = [
   'Moove=moove|mooveafrica', 'Yellow Card=yellowcard', 'Busha', 'Quidax', 'Patricia', 'Bitnob', 'Maplerad', 'Termii',
   'Helium Health=heliumhealth', 'mPharma=mpharma', 'Jumia', 'Wave=wave|wavemobilemoney', 'Yassir', 'Sendwave',
   'M-KOPA=mkopa', 'Twiga', 'Lidya', 'Thepeer', 'Prospa', 'Sycamore', 'Seamless HR=seamlesshr', 'Workpay',
-  'Semicolon Africa=semicolon', 'AltSchool Africa=altschool', 'Decagon', 'Treepz', 'Releaf', 'Vendease', 'Shuttlers', 'Duplo'];
+  'Semicolon Africa=semicolon', 'AltSchool Africa=altschool', 'Decagon', 'Treepz', 'Releaf', 'Vendease', 'Shuttlers', 'Duplo',
+  'Konga', 'Jiji', 'Bumpa', 'CredPal=credpal', 'Renmoney', 'FairMoney=fairmoney', 'TradeDepot=tradedepot', 'Omnibiz',
+  'Lemonade Finance=lemonadefinance|lemfi', 'Afriex', 'Chowdeck', 'Reliance Health=reliancehealth|reliance-health', 'Bankly',
+  'Klasha', 'Union54', 'Sabi=sabi|sabi-1', 'Mano', 'Spleet', 'Hydrogen Pay=hydrogen',
+  // United States: remote-first companies that often hire contractors or worldwide
+  'Vercel', 'Supabase', 'Railway', 'Replit', 'Linear', 'Hugging Face=huggingface', 'Cal.com=calcom', 'Coder', 'Netlify',
+  'Fly.io=flyio', 'Render', 'Discourse', 'Khan Academy=khanacademy', 'Coursera', 'Grammarly', 'Doximity', 'Twilio', 'HubSpot', 'Okta', 'Cloudflare', 'Datadog', 'MongoDB', 'Figma', 'Miro',
+  'Asana', 'Dropbox', 'Reddit', 'Duolingo', 'Instacart', 'Coinbase', 'Ripple', 'Circle', 'Anchorage Digital=anchorage',
+  'Fireblocks', 'Chainalysis', 'Alchemy', 'Gusto', 'Brex', 'Ramp', 'Mercury', 'Plaid', 'Stripe', 'Affirm', 'Chime', 'SoFi',
+  'Lattice', 'Greenhouse', 'Lever', 'Ashby', 'Retool', 'Zendesk', 'Intercom', 'Front', 'Kustomer', 'Gorgias', 'Gladly',
+  'BELAY=belay|belaysolutions', 'Magic=magic|getmagic', 'Time etc=timeetc', 'Zirtual', 'Fancy Hands=fancyhands', 'Uplers',
+  // United Kingdom
+  'PostHog', 'Raycast', 'Hopin', 'Monzo', 'Revolut', 'Deliveroo', 'Paddle', 'Multiverse', 'Thought Machine=thoughtmachine',
+  'Snyk', 'Cleo=cleo|cleoai', 'GoCardless', 'Checkout.com=checkoutcom', 'Octopus Energy=octopusenergy', 'Starling Bank=starlingbank',
+  'Onfido', 'Synthesia', 'Tide', 'Zilch', 'Bloom & Wild=bloomandwild', 'Farewill', 'Lendable', 'Marshmallow', 'Ometria',
+  'Pleo', 'Beamery', 'Peak AI=peak', 'Signal AI=signalai', 'Cera', 'Papier', 'Moneybox', 'Freetrade',
+  // Canada
+  'Shopify', 'Wealthsimple', 'Hootsuite', 'Clio', 'Jobber', 'Dapper Labs=dapperlabs', 'Thinkific', 'Ritual', 'FreshBooks',
+  'Lightspeed', 'Coveo', 'ApplyBoard', '1Password=1password|onepassword', 'Float', 'Visier', 'Hopper', 'Tailscale', 'Vidyard',
+  'Wave Financial=waveapps', 'Top Hat=tophat', 'Koho', 'Neo Financial=neofinancial', 'Faire', 'Ada=ada|adasupport', 'Cohere',
+  // Germany
+  'Personio', 'N26', 'Trade Republic=traderepublic', 'Contentful', 'Celonis', 'Delivery Hero=deliveryhero', 'GetYourGuide=getyourguide',
+  'Babbel', 'Zalando', 'HelloFresh', 'Taxfix', 'Pitch', 'Prisma', 'Raisin', 'Scalable Capital=scalablecapital',
+  'Solaris', 'Mambu', 'Enpal', 'Sennder', 'FlixBus=flix', 'Hornetsecurity', 'Statista', 'DeepL', 'Aleph Alpha=alephalpha',
+  'Remote People=remotepeople', 'Tourlane', 'Ecosia', 'Klarna',
+  // Spain
+  'Typeform', 'Factorial=factorial|factorialhr', 'TravelPerk=travelperk|perk', 'Glovo', 'Jobandtalent', 'Cabify', 'Wallapop',
+  'Red Points=redpoints', 'Holded', 'Seedtag', 'Idealista', 'Lodgify', 'Kenjo', 'Ironhack', 'Clarity AI=clarityai', 'Fever',
+  'Paack', 'Badi', 'Codurance', 'Freepik',
+  // Australia
+  'Canva', 'Atlassian', 'SafetyCulture', 'Deputy', 'Employment Hero=employmenthero', 'Linktree', 'Airwallex', 'Culture Amp=cultureamp',
+  'Envato', '99designs=99designs', 'Buildkite', 'Go1', 'Rokt', 'Immutable', 'Tyro', 'Zip Co=zip|zipco', 'Afterpay', 'Xero',
+  'Hnry', 'Eucalyptus', 'Leonardo.Ai=leonardoai', 'Prospection', 'Instaclustr', 'Simple=simple|simplecommerce', 'Mable'];
+
+/** Changes when the employer list in the code changes, so new employers are looked up after an update. */
+function employersKey_() { return hashOf_(CANDIDATE_EMPLOYERS.join('|')).slice(0, 12); }
 
 function boardGuesses_(name) {
   var known = String(name).split('=')[1];
@@ -1070,7 +1148,11 @@ function findEmployers_(seconds) {
     });
     batch.forEach(function (t) { if (checked.indexOf(t.name) < 0 && batch[batch.length - 1].name !== t.name) checked.push(t.name); });
   }
-  if (i >= tries.length) { checked = []; props.setProperty('EMPLOYERS_SEARCHED', String(Date.now())); }
+  if (i >= tries.length) {
+    checked = [];
+    props.setProperty('EMPLOYERS_SEARCHED', String(Date.now()));
+    props.setProperty('EMPLOYERS_LIST', employersKey_());  // this version of the list is done
+  }
   props.setProperty('EMPLOYERS_CHECKED', JSON.stringify(checked));
   log_('FIND_EMPLOYERS', 'checked ' + CANDIDATE_EMPLOYERS.length + ' employers, added ' + added + ' job boards: ' + Object.keys(found).join(', '));
   return added;
@@ -1089,17 +1171,29 @@ function findJobs() {
   ensureColumns_(TAB.COMPANIES, COMPANY_COLS);
   var props = PropertiesService.getScriptProperties();
   var working = table_(TAB.COMPANIES).rows.filter(function (r) { return r[2] && !/^not found/.test(r[4]); }).length;
-  if (working < 25 && Date.now() - Number(props.getProperty('EMPLOYERS_SEARCHED') || 0) > 7 * 86400e3) findEmployers_(90);
+  if (props.getProperty('EMPLOYERS_LIST') !== employersKey_() ||
+      (working < 25 && Date.now() - Number(props.getProperty('EMPLOYERS_SEARCHED') || 0) > 7 * 86400e3)) findEmployers_(90);
+  addNewSources_();
   var ct = table_(TAB.COMPANIES);
   var companies = [];
   ct.rows.forEach(function (r, i) { if (r[0] && r[1] && r[2] && !/^not found/.test(r[4])) companies.push({ r: r, row: i + 2 }); });
   var added = 0, matched = 0, already = 0, lowFit = 0, elsewhere = 0, lowPay = 0, errors = [], minFit = settings_().minFit;
   var start = t0, resolved = 0, notOpen = {}, tooOld = 0, maxAge = settings_().maxAge;
   jobs.rows.forEach(function (r) { seen[seenKey_(r[jobs.col['Employer']], r[jobs.col['Title']])] = true; });
-  companies.forEach(function (co) {
+  // the job boards are searched in turn: a run that hits the time limit carries on from there next time
+  var off = Number(props.getProperty('FIND_OFFSET') || 0) % Math.max(1, companies.length), skipped = 0;
+  companies = companies.slice(off).concat(companies.slice(0, off));
+  var pre = prefetchBoards_(companies.map(function (co) {
+    return { ats: String(co.r[1]).toLowerCase().trim(), board: String(co.r[2]).trim() };
+  }), 100);
+  companies.forEach(function (co, k) {
     var c = co.r, list, ats = String(c[1]).toLowerCase().trim(), board = String(c[2]).trim();
-    if (Date.now() - start > 240e3) { errors.push(c[0] + ': skipped this run (time limit)'); return; }  // Apps Script stops at 6 minutes
-    try { list = fetchBoard_(ats, board); } catch (e) {
+    if (Date.now() - start > 240e3) {  // Apps Script stops at 6 minutes
+      if (!skipped) props.setProperty('FIND_OFFSET', String((off + k) % companies.length));
+      skipped++;
+      return;
+    }
+    try { list = fetchBoard_(ats, board, pre); } catch (e) {
       errors.push(String(e.message));
       if (/HTTP 404/.test(e.message)) ct.sheet.getRange(co.row, 5).setValue('not found (board moved or renamed)');
       return;
@@ -1132,6 +1226,8 @@ function findJobs() {
       added++;
     });
   });
+  if (!skipped) props.setProperty('FIND_OFFSET', '0');
+  else errors.push(skipped + ' source(s) left for the next run (time limit)');
   sortJobsByFit_();
   log_('FIND_JOBS', 'sources ' + companies.length + ', matches at ' + minFit + '%+ fit: ' + matched + ' (new ' + added +
     ', already in Jobs ' + already + '); below ' + minFit + '% not listed: ' + lowFit + '; not open to Nigeria: ' + elsewhere +
@@ -1139,6 +1235,15 @@ function findJobs() {
     '; salary below ' + (p.salaryMin || '-') + ': ' + lowPay + '; posted more than ' + maxAge + ' h ago or no date: ' + tooOld +
     (errors.length ? '; sources with problems: ' + errors.join('; ') : ''));
   return added;
+}
+
+/** Adds job sources that are new in this version of the code to an existing Companies tab (by ATS + board). */
+function addNewSources_() {
+  var ct = table_(TAB.COMPANIES), have = {};
+  ct.rows.forEach(function (r) { have[String(r[1]).toLowerCase().trim() + ':' + String(r[2]).trim()] = true; });
+  var add = STARTER_COMPANIES.filter(function (c) { return !have[c[1] + ':' + c[2]]; });
+  add.forEach(function (c) { ct.sheet.appendRow(c.concat(['added by update'])); });
+  if (add.length) log_('NEW_SOURCES', add.length + ' job source(s) added: ' + add.map(function (c) { return c[0]; }).join(', '));
 }
 
 /** The same job posted on several boards: employer + title, ignoring case and punctuation. */
@@ -1373,7 +1478,9 @@ function reviewPackage_(p, pkg) {
 
 // ---- ATS-standard documents: one column on US Letter, no tables, text boxes, headers or footers; one standard font;
 // standard section names; real bullets; body text justified. Applicant tracking systems read these reliably.
-var FONT = 'Arial', NAVY = '#000000';  // Source of Truth rule: Arial or Calibri, 10-11 pt body, 14-16 pt name
+// Source of Truth rules: Calibri or Arial, 10-11 pt body, 14-16 pt headers, single column, no tables, text boxes, headers,
+// footers or icons, real bullets, standard headings. Navy name and headings, grey details: professional and still ATS-safe.
+var FONT = 'Calibri', NAVY = '#1F3864', GREY = '#404040';
 
 function para_(body, text, size, opts) {
   opts = opts || {};
@@ -1394,6 +1501,7 @@ function para_(body, text, size, opts) {
   var t = par.editAsText();
   t.setFontFamily(FONT).setFontSize(size).setBold(!!opts.bold).setItalic(!!opts.italic).setUnderline(false)
     .setForegroundColor(opts.color || '#000000');
+  if (opts.boldTo > 0 && text.length) t.setBold(0, Math.min(opts.boldTo, text.length) - 1, true);  // e.g. the job title only
   return par;
 }
 
@@ -1402,36 +1510,46 @@ function page_(body, margin) {
   body.setMarginLeft(margin).setMarginRight(margin).setMarginTop(margin).setMarginBottom(margin);
 }
 
+/** The same header on the resume and the cover letter: name, tagline, contact line, then a rule. */
+function header_(body, p, tagline) {
+  para_(body, p.full_name.toUpperCase(), 18, { bold: true, center: true, first: true, after: 0, color: NAVY });
+  if (tagline) para_(body, tagline, 10.5, { center: true, after: 1, color: NAVY });
+  para_(body, contactLine_(p), 9.5, { center: true, after: 2, color: GREY });
+  body.appendHorizontalRule();
+}
+
 function buildResumeDoc_(p, pkg, name, folder) {
   var doc = DocumentApp.create(name);
   var body = doc.getBody();
-  page_(body, 54);  // 0.75 inch
-  para_(body, p.full_name.toUpperCase(), 16, { bold: true, center: true, first: true, after: 1, color: NAVY });
-  if (pkg.headline) para_(body, pkg.headline, 11, { bold: true, center: true, after: 1 });
-  para_(body, contactLine_(p), 10, { center: true, after: 6 });
+  page_(body, 46);  // about 0.65 inch: room for one page
+  header_(body, p, pkg.headline);
   function heading(h) {  // navy heading with a rule under it (a plain line: applicant tracking systems ignore it)
-    para_(body, h.toUpperCase(), 12, { bold: true, before: 8, after: 0, color: NAVY });
+    para_(body, h.toUpperCase(), 11.5, { bold: true, before: 9, after: 0, color: NAVY });
     body.appendHorizontalRule();
   }
   heading('Summary');
-  para_(body, pkg.summary, 10.5, { justify: true, after: 2 });
+  para_(body, pkg.summary, 10.5, { justify: true, before: 2, after: 2, line: 1.1 });
   if ((pkg.competencies || []).length) {
     heading('Skills');
-    para_(body, pkg.competencies.join(' | '), 10.5, { justify: true, after: 2 });
+    para_(body, pkg.competencies.join(' | '), 10.5, { before: 2, after: 2, line: 1.1 });
   }
   heading('Experience');
   (pkg.experience || []).forEach(function (e, i) {
-    para_(body, [e.title, e.employer].filter(String).join(' | '), 11, { bold: true, before: i ? 6 : 0, after: 0 });
-    para_(body, [e.dates, e.location].filter(String).join(' | '), 11, { italic: true, after: 2 });
-    (e.bullets || []).forEach(function (b) { para_(body, b, 11, { bullet: true, justify: true, after: 1 }); });
+    var title = String(e.title || ''), line = [title, e.employer].filter(String).join(' | ');
+    para_(body, line, 11, { boldTo: title.length, before: i ? 7 : 3, after: 0 });
+    para_(body, [e.dates, e.location].filter(String).join(' | '), 10, { italic: true, after: 2, color: GREY });
+    (e.bullets || []).forEach(function (b) { para_(body, b, 10.5, { bullet: true, justify: true, after: 1, line: 1.05 }); });
   });
   if ((pkg.education || []).length) {
     heading('Education');
-    pkg.education.forEach(function (x) { para_(body, x, 11); });
+    pkg.education.forEach(function (x, i) {
+      var cut = String(x).search(/,| \| /);  // the degree in bold, the school after it
+      para_(body, x, 10.5, { boldTo: cut > 0 ? cut : String(x).length, before: i ? 2 : 3, after: 1 });
+    });
   }
   if ((pkg.certifications || []).length) {
     heading('Certifications');
-    pkg.certifications.forEach(function (x) { para_(body, x, 11); });
+    pkg.certifications.forEach(function (x, i) { para_(body, x, 10.5, { before: i ? 1 : 3, after: 1 }); });
   }
   doc.saveAndClose();
   DriveApp.getFileById(doc.getId()).moveTo(folder);
@@ -1441,16 +1559,17 @@ function buildResumeDoc_(p, pkg, name, folder) {
 function buildCoverDoc_(p, pkg, job, name, folder) {
   var doc = DocumentApp.create(name);
   var body = doc.getBody();
-  page_(body, 72);  // 1 inch, business letter
-  para_(body, p.full_name.toUpperCase(), 16, { bold: true, first: true, after: 1, color: NAVY });
-  para_(body, contactLine_(p), 10, { after: 14 });
-  para_(body, Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MMMM d, yyyy'), 11, { after: 12 });
-  para_(body, job.employer + ' Hiring Team', 11, { after: 12 });
-  para_(body, 'Re: Application for ' + job.title, 11, { bold: true, after: 12 });
+  page_(body, 64);  // about 0.9 inch, business letter
+  header_(body, p, pkg.headline);  // matches the resume, so the two read as one set
+  para_(body, Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MMMM d, yyyy'), 11, { before: 14, after: 12 });
+  para_(body, 'Hiring Team', 11, { after: 0 });
+  para_(body, job.employer, 11, { bold: true, after: 12 });
+  para_(body, 'Re: Application for ' + job.title, 11, { bold: true, after: 12, color: NAVY });
   para_(body, 'Dear ' + job.employer + ' Hiring Team,', 11, { after: 10 });
   (pkg.cover_letter_paragraphs || []).forEach(function (x) { para_(body, x, 11, { justify: true, after: 10, line: 1.15 }); });
-  para_(body, 'Sincerely,', 11, { before: 4, after: 2 });
-  para_(body, p.full_name, 11);
+  para_(body, 'Sincerely,', 11, { before: 6, after: 18 });
+  para_(body, p.full_name, 11, { bold: true, after: 0 });
+  para_(body, [p.phone, p.email].filter(String).join(' | '), 10, { color: GREY });
   doc.saveAndClose();
   DriveApp.getFileById(doc.getId()).moveTo(folder);
   return doc.getId();

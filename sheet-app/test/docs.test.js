@@ -8,7 +8,7 @@ function run(build) {
       setSpacingBefore() { return p; }, setSpacingAfter() { return p; }, setLineSpacing() { return p; },
       setAlignment(a) { p.align = a; return p; }, setIndentStart() { return p; }, setIndentFirstLine() { return p; },
       setGlyphType(g) { p.glyph = g; return p; },
-      editAsText() { const t = { setFontFamily: (f) => { p.font = f; return t; }, setFontSize: () => t, setBold: (b) => { p.bold = b; return t; },
+      editAsText() { const t = { setFontFamily: (f) => { p.font = f; return t; }, setFontSize: () => t, setBold: (a, b, c) => { if (c === undefined) p.bold = a; else p.boldRange = [a, b]; return t; },
         setItalic: (i) => { p.italic = i; return t; }, setUnderline: () => t, setForegroundColor: (c) => { p.color = c; return t; } }; return t; },
       asParagraph() { return p; } };
     paras.push(p); return p;
@@ -44,8 +44,13 @@ assert.deepEqual(bullets.map(x => x.text), ['b1', 'b2'], 'real bullets, no typed
 assert(bullets.every(x => x.glyph === 'BULLET' && x.align === 'J'), 'bullets justified');
 assert.equal(r.paras.find(x => x.text === 'S').align, 'J', 'summary justified');
 assert(text.includes('T | E') && r.paras.find(x => x.text === 'D | L').italic, 'title | employer, then dates | location in italics');
-assert(r.paras.filter(x => x.kind !== 'hr').every(x => x.font === 'Arial'), 'one standard font');
+assert(r.paras.filter(x => x.kind !== 'hr').every(x => x.font === 'Calibri'), 'one standard font');
+const titleLine = r.paras.find(x => x.text === 'T | E');
+assert.deepEqual(titleLine.boldRange, [0, 0], 'only the job title is bold');
+assert(r.paras.find(x => x.text === 'H' && x.align === 'C'), 'tagline under the name');
 const c = run((api) => api.buildCoverDoc_(p, pkg, { employer: 'Acme', title: 'Analyst' }, 'cover', {}));
 assert(c.paras.some(x => x.text === 'Re: Application for Analyst'));
+assert.equal(c.paras[0].text, 'TEST PERSON', 'same header as the resume');
+assert(c.paras.some(x => x.text === 'Acme' && x.bold), 'employer block');
 assert(c.paras.filter(x => /^(One|Two)\.$/.test(x.text)).every(x => x.align === 'J'), 'letter paragraphs justified');
 console.log('document-building test passed');

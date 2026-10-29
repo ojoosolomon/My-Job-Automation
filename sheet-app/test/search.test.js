@@ -42,11 +42,12 @@ const pages = {
 };
 const html = { 'https://remotive.com/remote-jobs/customer-support/cs-11':
   '<a class="apply" href="https://boards.greenhouse.io/globex/jobs/777?utm_source=remotive">Apply for this position</a>' };
+const fetch = (url) => ({ getResponseCode: () => (pages[url] || html[url]) ? 200 : 404, getHeaders: () => ({}),
+  getContentText: () => pages[url] ? JSON.stringify(pages[url]) : (html[url] || '') });
 const env = {
   SpreadsheetApp: { getActive: () => ({ getSheetByName: (n) => ({ Jobs: jobs, Companies: companies, Profile: profile, Log: log })[n] }) },
   PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => store[k] || null, setProperty: (k, v) => { store[k] = v; } }) },
-  UrlFetchApp: { fetch: (url) => ({ getResponseCode: () => (pages[url] || html[url]) ? 200 : 404, getHeaders: () => ({}),
-    getContentText: () => pages[url] ? JSON.stringify(pages[url]) : (html[url] || '') }) },
+  UrlFetchApp: { fetch, fetchAll: (reqs) => reqs.map(r => fetch(r.url)) },
   Utilities: { computeDigest: (a, t) => Array.from(Buffer.from(String(t)).slice(-32)), DigestAlgorithm: {}, Charset: {}, formatDate: () => '2026-10-28' },
   Session: { getScriptTimeZone: () => 'UTC' }, DriveApp: {}, MailApp: {}, LockService: {}, ContentService: {}, XmlService: {}
 };
@@ -72,4 +73,6 @@ assert(/not open to Nigeria: 4/.test(log.rows[log.rows.length - 1][2]), log.rows
 assert(!got.some(r => /II$|III$/.test(r.title) && r.title !== 'Executive Assistant II'),
   'posted in 2023, 30 hours ago, or with no posting date (only an "updated" date): not listed');
 assert(/posted more than 24 h ago or no date: 3/.test(log.rows[log.rows.length - 1][2]), log.rows[log.rows.length - 1][2]);
+assert(companies.rows.some(r => r[2] === 'search:executive assistant' && r[4] && /^(ok|not found)|added/.test(r[4]) || r[2] === 'search:executive assistant'),
+  'job sources new in this version are added to an existing Companies tab');
 console.log('search rules tests passed');
