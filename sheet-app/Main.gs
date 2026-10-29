@@ -9,7 +9,7 @@
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-29b';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-10-29c';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline' };
 var APPLIED_BEFORE_COLS = ['Employer', 'Job URL', 'Applied on'];  // applications sent before this Sheet existed
@@ -54,7 +54,7 @@ function onOpen() {
     .addItem('Add a job from a link…', 'addJobFromLink')
     .addItem('Find more employers', 'findEmployers')
     .addItem('Prepare application for selected job row', 'prepareSelected')
-    .addItem("Prepare today's best matches now", 'prepareNew')
+    .addItem("Prepare today's best matches now", 'prepareNowMenu')
     .addItem('Check inbox now', 'checkInbox')
     .addSeparator()
     .addItem('Auto-apply: turn on / off', 'toggleAutoApply')
@@ -1047,11 +1047,13 @@ function prepareNew() {
   ensureColumns_(TAB.JOBS, JOB_COLS);
   var jobs = table_(TAB.JOBS);
   var cands = [], leverOff = leverBlocked_();
+  var why = { tooOld: 0, lowFit: 0, sameEmployer: 0, notOpen: 0, yoursLater: 0, prepared: 0, failed: 0, stopped: '' };
   jobs.rows.forEach(function (r, i) {
     var where = r[jobs.col['Open to Nigeria']];
     if (r[jobs.col['Status']] !== 'NEW' || (where !== 'yes' && where !== 'review')) return;
     if (!postedWithin(r[jobs.col['Posted']], s.maxAge)) {  // went past the age limit while waiting: not applied to
       jobs.sheet.getRange(i + 2, jobs.col['Status'] + 1).setValue('SKIPPED — posted more than ' + s.maxAge + ' hours ago');
+      why.tooOld++;
       return;
     }
     var score = fitScore({ title: r[jobs.col['Title']], text: r[jobs.col['Description']], remote: where }, p.titles, p.cv_text);
@@ -1065,14 +1067,16 @@ function prepareNew() {
   var perRun = Number(PropertiesService.getScriptProperties().getProperty('MAX_PER_RUN') || 3), n = 0, checks = 0;
   for (var i = 0; i < cands.length && n < perRun; i++) {
     var c = cands[i];
-    if (s.auto && autoToday_() >= s.limit) { log_('DAILY_LIMIT_REACHED', s.limit + ' applications today; the rest wait for tomorrow'); break; }
-    if (preparedToday_() >= s.limit + 5) { log_('PREPARE_LIMIT_REACHED', 'prepared ' + (s.limit + 5) + ' today (protects the free Gemini quota)'); break; }
+    if (s.auto && autoToday_() >= s.limit) { why.stopped = 'daily limit of ' + s.limit + ' applications reached'; break; }
+    if (preparedToday_() >= s.limit + 5) { why.stopped = 'prepared ' + (s.limit + 5) + ' today (protects the free Gemini quota)'; break; }
     if (c.score < s.minFit) {
+      why.lowFit++;
       setCells_(jobs = table_(TAB.JOBS), findRow_(jobs, 'Job ID', c.id), { 'Status': 'SKIPPED — fit ' + c.score + '% is below ' + s.minFit + '%' });
       continue;
     }
-    if (c.tier === 3 && (hersToday_() + 1) > 0.3 * (preparedToday_() + 1)) continue;  // your share stays under 30%: leave it NEW
+    if (c.tier === 3 && (hersToday_() + 1) > 0.3 * (preparedToday_() + 1)) { why.yoursLater++; continue; }  // your share stays under 30%: leave it NEW
     if (appliedRecently_(c.employer)) {
+      why.sameEmployer++;
       setCells_(jobs = table_(TAB.JOBS), findRow_(jobs, 'Job ID', c.id), { 'Status': 'SKIPPED — applied to this employer in the last 30 days' });
       continue;
     }
@@ -1080,21 +1084,36 @@ function prepareNew() {
       if (checks >= 12) continue;
       checks++;
       var verdict;
-      try { verdict = checkNigeria_(c.job); } catch (e) { break; }  // free Gemini allowance used up for today
+      try { verdict = checkNigeria_(c.job); } catch (e) { why.stopped = 'free Gemini allowance used up for today'; break; }
       if (verdict.ok === 'review') continue;
       jobs = table_(TAB.JOBS);
       setCells_(jobs, findRow_(jobs, 'Job ID', c.id), verdict.ok === 'yes' ? { 'Open to Nigeria': 'yes', 'Why eligible': verdict.why } :
         { 'Open to Nigeria': 'no', 'Why eligible': verdict.why, 'Status': 'SKIPPED — ' + verdict.why.slice(0, 200) });
-      if (verdict.ok !== 'yes') continue;
+      if (verdict.ok !== 'yes') { why.notOpen++; continue; }
     }
     var out = prepareJob_(c.id);
-    if (/GEMINI_DAILY_LIMIT/.test(out)) break;
+    if (/GEMINI_DAILY_LIMIT/.test(out)) { why.stopped = 'free Gemini allowance used up for today (resets at 8 or 9 am Lagos time)'; break; }
+    if (/^Prepared/.test(out)) why.prepared++; else why.failed++;
     preparedToday_(1);
     if (c.tier === 3) hersToday_(1);
     n++;
     if (s.auto && /^Prepared/.test(out)) autoApprove_('A-' + String(c.id).slice(2), c.score, s);
   }
   autoSweep_();
+  var summary = 'jobs waiting: ' + cands.length + '; prepared: ' + why.prepared + (why.failed ? '; failed: ' + why.failed + ' (see PREPARE_FAILED)' : '') +
+    '; skipped: ' + why.tooOld + ' posted more than ' + s.maxAge + ' h ago, ' + why.lowFit + ' below ' + s.minFit + '% fit, ' +
+    why.notOpen + ' not open to Nigeria (Gemini check), ' + why.sameEmployer + ' employer applied to in the last 30 days' +
+    (why.yoursLater ? '; ' + why.yoursLater + ' manual-apply job(s) left for later' : '') + (why.stopped ? '; stopped: ' + why.stopped : '') +
+    (cands.length > 3 && !why.stopped ? '; at most 3 are prepared per run, the rest follow every hour' : '');
+  log_('PREPARE', summary);
+  return summary;
+}
+
+/** Menu: prepare now and say what happened. */
+function prepareNowMenu() {
+  var summary = prepareNew();
+  SpreadsheetApp.getUi().alert('Prepare best matches', summary.replace(/; /g, '\n') +
+    '\n\nSee the Applications tab (and the Log tab for details).', SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 /**
