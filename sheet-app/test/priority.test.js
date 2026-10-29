@@ -4,8 +4,8 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'Code.gs'), 'utf8');
 const sheet = (rows) => ({ rows, getRange: (r, c) => ({ setValue: (v) => { rows[r - 1][c - 1] = v; return { setFontWeight() {} }; },
   getValues: () => [rows[0]] }), getLastColumn: () => rows[0].length, getDataRange: () => ({ getValues: () => rows.map(x => x.slice()) }),
   appendRow: (x) => rows.push(x) });
-const JOB = ['Job ID', 'Found', 'Employer', 'Title', 'Location', 'Open to Nigeria', 'Title match', 'ATS', 'Board', 'Job URL', 'Apply URL', 'Status', 'Description', 'Fit score'];
-const job = (id, ats, title) => [id, '', 'Emp ' + id, title, '', 'yes', '', ats, '', 'u' + id, 'u' + id, 'NEW', '', ''];
+const JOB = ['Job ID', 'Found', 'Employer', 'Title', 'Location', 'Open to Nigeria', 'Title match', 'ATS', 'Board', 'Job URL', 'Apply URL', 'Status', 'Description', 'Fit score', 'Posted'];
+const job = (id, ats, title) => [id, '', 'Emp ' + id, title, '', 'yes', '', ats, '', 'u' + id, 'u' + id, 'NEW', '', '', new Date(Date.now() - 3600e3)];
 const jobs = sheet([JOB, job('J-1', 'workday', 'w90'), job('J-2', 'greenhouse', 'g70'), job('J-3', 'lever', 'l80'),
   job('J-4', 'ashby', 'a66'), job('J-5', 'workday', 'w85'), job('J-6', 'greenhouse', 'g50')]);
 const APP = ['App ID', 'Job ID', 'Employer', 'Title', 'Job URL', 'Resume PDF', 'Cover letter PDF', 'Resume (Word)', 'Keyword report',

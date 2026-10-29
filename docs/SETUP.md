@@ -112,6 +112,11 @@ the free Gemini key, 8 to 10 a day is the safe maximum: each application uses 2 
 
 You can work any hours, so a time zone requirement on its own is never a reason to skip a job.
 
+**Only fresh jobs.** Only jobs **posted in the last 24 hours** are listed and applied to. Jobs with no posting date are
+left out too. Older jobs still waiting in the Jobs tab are removed at the next search. A job that goes past 24 hours
+before its turn is marked **SKIPPED — posted more than 24 hours ago**. To change the limit (for example 72 for three
+days), use **Job Board → Set maximum job age (hours)**.
+
 **Statuses in the Applications tab:**
 
 | Status | Meaning |

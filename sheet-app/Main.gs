@@ -9,7 +9,7 @@
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-29a';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-10-29b';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline' };
 var APPLIED_BEFORE_COLS = ['Employer', 'Job URL', 'Applied on'];  // applications sent before this Sheet existed
@@ -60,6 +60,7 @@ function onOpen() {
     .addItem('Auto-apply: turn on / off', 'toggleAutoApply')
     .addItem('Set daily application limit', 'setDailyLimit')
     .addItem('Set minimum fit %', 'setMinFit')
+    .addItem('Set maximum job age (hours)', 'setMaxAge')
     .addItem('Send today\'s summary email now', 'dailySummary')
     .addItem('Send your update now (normally Tue and Fri)', 'herUpdate')
     .addSeparator()
@@ -346,7 +347,7 @@ function fetchBoard_(ats, board) {
     var pay = (j.pay_input_ranges || [])[0];
     return { id: 'gh-' + j.id, title: j.title, location: (j.location || {}).name, url: j.absolute_url,
       apply: 'https://boards.greenhouse.io/embed/job_app?for=' + board + '&token=' + j.id, text: stripHtml_(j.content),
-      posted: j.first_published || j.updated_at, salary: pay ? { min: pay.min_cents / 100, max: pay.max_cents / 100, interval: pay.title } : null };
+      posted: j.first_published || '', salary: pay ? { min: pay.min_cents / 100, max: pay.max_cents / 100, interval: pay.title } : null };
   });
   if (ats === 'lever') return d.map(function (j) {
     var lists = (j.lists || []).map(function (x) { return x.text + '\n' + stripHtml_(x.content); }).join('\n');
@@ -571,6 +572,7 @@ function findJobs() {
   var t0 = Date.now();  // Apps Script stops a run after 6 minutes
   ensureColumns_(TAB.JOBS, JOB_COLS);
   removeLowFitJobs_(settings_().minFit);  // first, so a removed job can come back if it qualifies later
+  removeOldJobs_(settings_().maxAge);
   var p = profile_();
   var jobs = table_(TAB.JOBS);
   var seen = {};
@@ -584,7 +586,7 @@ function findJobs() {
   var companies = [];
   ct.rows.forEach(function (r, i) { if (r[0] && r[1] && r[2] && !/^not found/.test(r[4])) companies.push({ r: r, row: i + 2 }); });
   var added = 0, matched = 0, already = 0, lowFit = 0, elsewhere = 0, lowPay = 0, errors = [], minFit = settings_().minFit;
-  var start = t0, resolved = 0, notOpen = {};
+  var start = t0, resolved = 0, notOpen = {}, tooOld = 0, maxAge = settings_().maxAge;
   jobs.rows.forEach(function (r) { seen[seenKey_(r[jobs.col['Employer']], r[jobs.col['Title']])] = true; });
   companies.forEach(function (co) {
     var c = co.r, list, ats = String(c[1]).toLowerCase().trim(), board = String(c[2]).trim();
@@ -598,6 +600,7 @@ function findJobs() {
     var feed = AGGREGATORS.indexOf(ats) >= 0;
     list.forEach(function (j) {
       if (!j.title || !j.url) return;
+      if (!postedWithin(j.posted, maxAge)) { tooOld++; return; }  // only jobs posted in the last 24 hours (Set maximum job age)
       var tm = matchTitle(j.title, p.titles);
       if (tm.match === 'none') return;
       var open = openToNigeria(j.location, j.text, j.workplaceType);  // only jobs that hire someone living in Nigeria
@@ -616,7 +619,7 @@ function findJobs() {
       if (where.ats === 'email' || where.ats === 'email-special') seen[where.apply] = true;
       jobRow_(jobs, ['J-' + hashOf_(j.url).slice(0, 10), new Date(), employer, j.title, j.location || '', open.ok,
         tm.match + ': ' + tm.target, where.ats, where.board, j.url, where.apply, 'NEW', String(j.text || '').slice(0, 40000)], score,
-        { 'Posted': j.posted ? new Date(j.posted) : '', 'Work type': 'Remote', 'Why eligible': open.why,
+        { 'Posted': postedDate(j.posted) || '', 'Work type': 'Remote', 'Why eligible': open.why,
           'Salary range': pay ? pay.text : 'not posted', 'Source': c[0] });
       added++;
     });
@@ -625,7 +628,7 @@ function findJobs() {
   log_('FIND_JOBS', 'sources ' + companies.length + ', matches at ' + minFit + '%+ fit: ' + matched + ' (new ' + added +
     ', already in Jobs ' + already + '); below ' + minFit + '% not listed: ' + lowFit + '; not open to Nigeria: ' + elsewhere +
     (elsewhere ? ' (' + Object.keys(notOpen).map(function (k) { return k + ' ' + notOpen[k]; }).join(', ') + ')' : '') +
-    '; salary below ' + (p.salaryMin || '-') + ': ' + lowPay +
+    '; salary below ' + (p.salaryMin || '-') + ': ' + lowPay + '; posted more than ' + maxAge + ' h ago or no date: ' + tooOld +
     (errors.length ? '; sources with problems: ' + errors.join('; ') : ''));
   return added;
 }
@@ -650,6 +653,18 @@ function jobRow_(jobs, values, score, extra) {
 }
 
 /** Removes Jobs rows below the minimum fit that never became an application. */
+/** Removes NEW Jobs rows posted more than `hours` ago (or with no posting date): they are no longer fresh. */
+function removeOldJobs_(hours) {
+  var jobs = table_(TAB.JOBS), col = jobs.col['Posted'], n = 0;
+  if (col === undefined) return 0;
+  for (var i = jobs.rows.length - 1; i >= 0; i--) {
+    var r = jobs.rows[i];
+    if (r[jobs.col['Status']] === 'NEW' && !postedWithin(r[col], hours)) { jobs.sheet.deleteRow(i + 2); n++; }
+  }
+  if (n) log_('OLD_JOBS_REMOVED', n + ' job(s) posted more than ' + hours + ' hours ago removed from Jobs');
+  return n;
+}
+
 function removeLowFitJobs_(minFit) {
   var jobs = table_(TAB.JOBS), col = jobs.col['Fit score'];
   if (col === undefined) return 0;
@@ -973,7 +988,7 @@ function prepareSelected() {
 function settings_() {
   var props = PropertiesService.getScriptProperties();
   return { auto: props.getProperty('AUTO_APPLY') !== 'off', limit: Number(props.getProperty('DAILY_LIMIT') || 8),
-    minFit: Number(props.getProperty('MIN_FIT') || 60) };
+    minFit: Number(props.getProperty('MIN_FIT') || 60), maxAge: Number(props.getProperty('MAX_AGE_HOURS') || 24) };
 }
 
 function sameDay_(a, b) {
@@ -1035,6 +1050,10 @@ function prepareNew() {
   jobs.rows.forEach(function (r, i) {
     var where = r[jobs.col['Open to Nigeria']];
     if (r[jobs.col['Status']] !== 'NEW' || (where !== 'yes' && where !== 'review')) return;
+    if (!postedWithin(r[jobs.col['Posted']], s.maxAge)) {  // went past the age limit while waiting: not applied to
+      jobs.sheet.getRange(i + 2, jobs.col['Status'] + 1).setValue('SKIPPED — posted more than ' + s.maxAge + ' hours ago');
+      return;
+    }
     var score = fitScore({ title: r[jobs.col['Title']], text: r[jobs.col['Description']], remote: where }, p.titles, p.cv_text);
     if (r[jobs.col['Fit score']] !== score) jobs.sheet.getRange(i + 2, jobs.col['Fit score'] + 1).setValue(score);
     cands.push({ id: r[jobs.col['Job ID']], employer: r[jobs.col['Employer']], score: score, row: i + 2, where: where,
@@ -1252,6 +1271,17 @@ function setDailyLimit() {
   PropertiesService.getScriptProperties().setProperty('DAILY_LIMIT', String(n));
   log_('DAILY_LIMIT', n);
   ui.alert('Daily limit set to ' + n + '.');
+}
+
+function setMaxAge() {
+  var ui = SpreadsheetApp.getUi();
+  var r = ui.prompt('Maximum job age', 'Only list and apply to jobs posted within this many hours (now ' + settings_().maxAge +
+    '; 24 = the last day, 72 = the last 3 days):', ui.ButtonSet.OK_CANCEL);
+  var n = parseInt(r.getResponseText(), 10);
+  if (r.getSelectedButton() !== ui.Button.OK || !(n >= 1 && n <= 720)) return;
+  PropertiesService.getScriptProperties().setProperty('MAX_AGE_HOURS', String(n));
+  log_('MAX_AGE_HOURS', n);
+  ui.alert('Only jobs posted within the last ' + n + ' hours will be listed and applied to.');
 }
 
 function setMinFit() {

@@ -125,6 +125,25 @@ function openToNigeria(location, text, workplaceType) {
   return { ok: 'review', why: 'Location rules unclear' + (loc ? ' (' + loc.slice(0, 60) + ')' : '') };
 }
 
+/**
+ * When a job was posted, as a Date (or null if unknown). Takes a Date, an ISO/RFC date string, or Unix time in seconds or
+ * milliseconds.
+ */
+function postedDate(posted) {
+  if (posted === null || posted === undefined || posted === '') return null;
+  var d = posted instanceof Date ? posted : typeof posted === 'number' || /^\d{9,13}$/.test(String(posted)) ?
+    new Date(Number(posted) * (Number(posted) < 1e11 ? 1000 : 1)) : new Date(String(posted));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/** Posted within the last `hours` hours? A job with no known posting date does not count as recent. */
+function postedWithin(posted, hours, now) {
+  var d = postedDate(posted);
+  if (!d) return false;
+  var age = (now ? new Date(now).getTime() : Date.now()) - d.getTime();
+  return age <= hours * 3600e3 && age > -24 * 3600e3;  // allow small clock/time-zone differences for "future" dates
+}
+
 var MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 /** "Sept. 2023", "Sep 2023" and "September 2023" all become "september 2023". */
 function normDates_(t) {
@@ -484,5 +503,5 @@ var QUESTION_BANK = [
 if (typeof module !== 'undefined') {
   module.exports = { matchTitle: matchTitle, openToNigeria: openToNigeria, numbersIn: numbersIn, checkPackage: checkPackage,
     answerFor: answerFor, workAuthorized: workAuthorized, classifyEmail: classifyEmail, matchEmail: matchEmail, applyEmail: applyEmail,
-    fitScore: fitScore, formFacts: formFacts, verifyAnswers: verifyAnswers, parseSalary: parseSalary, QUESTION_BANK: QUESTION_BANK };
+    fitScore: fitScore, formFacts: formFacts, postedDate: postedDate, postedWithin: postedWithin, verifyAnswers: verifyAnswers, parseSalary: parseSalary, QUESTION_BANK: QUESTION_BANK };
 }

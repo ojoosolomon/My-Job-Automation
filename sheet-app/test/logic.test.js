@@ -161,3 +161,16 @@ const md = L.formFacts({ location: 'Glendale, Maryland 20769', cv_text: '' });
 assert.deepEqual([md.city, md.state, md.state_name, md.zip], ['Glendale', 'MD', 'Maryland', '20769']);
 assert.equal(L.formFacts({ home_location: 'Glendale, MD', cv_text: '' }).state, 'MD', 'home_location when location is blank');
 console.log('dates, email matching and state names ok');
+
+// job age: only jobs posted in the last 24 hours (Set maximum job age)
+const now = Date.parse('2026-10-29T12:00:00Z');
+assert.equal(L.postedWithin('2026-10-29T02:00:00Z', 24, now), true);
+assert.equal(L.postedWithin('2026-10-27T12:00:00Z', 24, now), false);
+assert.equal(L.postedWithin('2023-03-01', 24, now), false);
+assert.equal(L.postedWithin(Math.floor(now / 1000) - 3600, 24, now), true, 'Unix seconds');
+assert.equal(L.postedWithin(now - 3600e3, 24, now), true, 'Unix milliseconds');
+assert.equal(L.postedWithin('Wed, 29 Oct 2026 08:00:00 +0000', 24, now), true, 'RSS date');
+assert.equal(L.postedWithin('', 24, now), false, 'no date: not counted as recent');
+assert.equal(L.postedWithin('not a date', 24, now), false);
+assert.equal(L.postedWithin('2026-10-27T12:00:00Z', 72, now), true, 'a longer limit when you choose one');
+console.log('job age ok');
