@@ -9,7 +9,7 @@
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-29e';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-10-29f';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
 var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back
@@ -1251,7 +1251,13 @@ function prepareNew() {
       setCells_(jobs = table_(TAB.JOBS), findRow_(jobs, 'Job ID', c.id), { 'Status': 'SKIPPED — fit ' + c.score + '% is below ' + s.minFit + '%' });
       continue;
     }
-    if (c.tier === 3 && (hersToday_() + 1) > 0.3 * (preparedToday_() + 1)) { why.yoursLater++; continue; }  // your share stays under 30%: leave it NEW
+    c.done = true;
+    // Jobs you submit yourself (employer career sites, Workday...) come after the ones the applier can send. They wait only
+    // while such an automatic job is still waiting, or once a day's worth of them (the daily limit) has been prepared.
+    if (c.tier === 3 && (cands.some(function (x) { return x.tier < 3 && !x.done && x.score >= s.minFit; }) || hersToday_() >= s.limit)) {
+      why.yoursLater++;
+      continue;
+    }
     if (appliedRecently_(c.employer)) {
       why.sameEmployer++;
       setCells_(jobs = table_(TAB.JOBS), findRow_(jobs, 'Job ID', c.id), { 'Status': 'SKIPPED — applied to this employer in the last 30 days' });

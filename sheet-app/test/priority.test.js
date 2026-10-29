@@ -35,8 +35,13 @@ globalThis.__prepared = prepared;
 api.prepareNew();
 assert.deepEqual(prepared, ['J-2', 'J-4', 'J-3'], 'auto sites first (Greenhouse, Ashby by fit), then Lever; account sites wait');
 api.prepareNew();
-assert.deepEqual(prepared.slice(3), ['J-1'], 'one site-she-applies job allowed after 3 automatic ones, the next would pass 30%');
-assert.equal(jobs.rows[5][11], 'NEW', 'the other stays NEW for later');
-assert.equal(jobs.rows.length, 6, 'the job below the minimum fit is removed from Jobs');
+assert.deepEqual(prepared.slice(3), ['J-1', 'J-5'], 'once no automatic job is waiting, the ones you submit yourself are prepared, best fit first');
+assert(!jobs.rows.some(r => r[0] === 'J-6'), 'the job below the minimum fit is removed from Jobs');
 assert.match(String(removedRows[1][5]), /^SKIPPED — fit 50%/, 'and recorded with the reason in the hidden Removed jobs tab');
+// only jobs you submit yourself waiting (the case that prepared nothing before): they are prepared
+const only = sheet([JOB, job('M-1', 'other', 'o90'), job('M-2', 'workday', 'w80')]);
+jobs.rows.splice(0, jobs.rows.length, ...only.rows);
+prepared.length = 0;
+api.prepareNew();
+assert.deepEqual(prepared, ['M-1', 'M-2'], 'manual-apply jobs are prepared when nothing else is waiting');
 console.log('priority tests passed');
