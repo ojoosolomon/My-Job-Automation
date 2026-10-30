@@ -2,9 +2,9 @@
  * JJ-Board Sheet app: pure logic (no Google services), shared by the Sheet script and the Node tests.
  */
 
-var ROLE_FAMILY = {
-  analyst: 'ic', specialist: 'ic', associate: 'ic', coordinator: 'ic', officer: 'ic', administrator: 'ic', generalist: 'ic',
-  bookkeeper: 'ic', writer: 'ic', expert: 'ic', assistant: 'ic', representative: 'ic', agent: 'ic',
+var ROLE_FAMILY = {  // "analyst" and "expert" titles are not in your role buckets: they match only word for word
+  specialist: 'ic', associate: 'ic', coordinator: 'ic', officer: 'ic', administrator: 'ic', generalist: 'ic',
+  bookkeeper: 'ic', writer: 'ic', assistant: 'ic', representative: 'ic', agent: 'ic',
   advocate: 'ic', rep: 'ic', manager: 'mgmt', lead: 'mgmt', supervisor: 'mgmt', head: 'mgmt'
 };
 // What a title is about. Two titles of the same family (e.g. "Executive Assistant" and "Virtual Assistant") that share
@@ -23,7 +23,13 @@ var CONCEPTS = {
 };
 var NEGATIVE_TITLE = ['engineer', 'developer', 'software', 'sales', 'marketing', 'nurse', 'physician', 'rn', 'lpn', 'intern',
   'therapist', 'pharmacist', 'attorney', 'counsel', 'lawyer', 'scientist', 'accountant', 'cpa', 'driver', 'technician',
-  'designer', 'director', 'vp', 'vice', 'chief', 'principal', 'teacher', 'tutor', 'translator', 'recruiter', 'trader'];
+  'designer', 'director', 'vp', 'vice', 'chief', 'principal', 'teacher', 'tutor', 'translator', 'recruiter', 'trader',
+  'analyst', 'flight', 'procurement', 'sql', 'edi', 'claims', 'fp', 'actuarial', 'underwriter', 'pilot', 'mechanic'];
+// A region in the title ("Support Specialist - LATAM", "Executive Assistant (UK)") limits the job to that region.
+var TITLE_REGION_CASE = /(^|[\s(\[,\/-])(LATAM|LatAm|APAC|EMEA|NAMER|NA|EU|UK|US|USA|U\.S\.|ANZ|DACH|CET|EST|PST)($|[\s)\],\/-])/;
+var TITLE_REGION = /\b(latin america|north america|americas|canada|europe|india|philippines|brazil|mexico|germany|france|spain|australia|japan|nordics|united states|united kingdom|south africa|kenya|egypt|poland|netherlands|zurich|london|berlin|toronto|new york|singapore)\b/i;
+// What may be left in a location after "Remote" without naming a place.
+var LOCATION_FILLER = /\b(remote|flexible|full[- ]?time|part[- ]?time|contract(or)?|permanent|temporary|freelance|optional|home|based|first|only|friendly|team|company|any|location|work|from|job|position|opportunity|role|global|distributed|virtual|telecommute|wfh|and|or|in|the|of|us)\b/ig;
 
 function words_(s) {
   return String(s || '').toLowerCase().replace(/&/g, ' and ').match(/[a-z]+/g) || [];
@@ -78,6 +84,7 @@ var RESTRICTIONS = [
   [new RegExp('\\b(authori[sz]ed|eligible|legally (able|permitted|allowed)|permitted|right) to work (in|for|within) (the\\s+)?(' + STRICT_COUNTRIES + ')\\b', 'i'), 'needs the right to work in'],
   [/\b(in|within|from) the (US|USA)\b|\b(US|USA)[- ](only|based only|residents? only|candidates only)\b/, 'only open to the US'],
   [/\b(u\.?s\.? citizens?(hip)?|green card|security clearance|public trust clearance|\bw-?2\b|\b1099\b|social security number|\bssn\b)/i, 'needs US status'],
+  [/\b(must|need to|required to|should|have to)\s+(currently\s+)?(be\s+)?(reside|residing|live|living|located|based|a resident)\s+(with)?in\s+(the\s+state\s+of\s+)?(alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming|ontario|quebec|british columbia|alberta)\b/i, 'requires living in a US state or Canadian province'],
   [/\b(not (open|available) to|cannot (hire|consider|accept)|unable to (hire|consider|accept)|excluding|except( for)?|not hiring in)\b[^.]{0,80}\b(africa|nigeria)\b/i, 'excludes Africa/Nigeria']
 ];
 var POSITIVE_TEXT = /\b(hire|hiring|work|candidates|applicants|team members?|people|talent)\b[^.]{0,60}\b(from )?(anywhere in the world|anywhere|worldwide|any country|around the world|globally|all over the world)\b|\b(fully distributed|remote-first|remote first)\b[^.]{0,80}\b(anywhere|worldwide|any country|globally)\b/i;
@@ -89,8 +96,10 @@ var POSITIVE_AFRICA = /\b(hire|hiring|based|located|candidates|applicants|open)\
  * 'no': on-site/hybrid, or restricted to other countries (US only, "must live in the UK", "authorized to work in the US"...).
  * 'review': remote but unclear (e.g. just "Remote" or "EMEA"): checked by Gemini before preparing.
  */
-function openToNigeria(location, text, workplaceType) {
+function openToNigeria(location, text, workplaceType, title) {
   var loc = String(location || '').replace(/\s+/g, ' ').trim();
+  var tl = String(title || ''), tr = tl.match(TITLE_REGION_CASE) || tl.match(TITLE_REGION);
+  if (tr && !OK_NIGERIA.test(tl) && !/\bafrica\b/i.test(tl)) return { ok: 'no', why: 'Title limits it to a region: "' + tl.slice(0, 80) + '"' };
   var body = String(text || '').replace(/\s+/g, ' ');
   var wt = String(workplaceType || '').toLowerCase().replace(/[^a-z]/g, '');
   var all = loc + ' ' + body;
@@ -119,6 +128,9 @@ function openToNigeria(location, text, workplaceType) {
       return { ok: 'review', why: 'Time zone given, country unclear: ' + loc.slice(0, 60) };
     return { ok: 'no', why: 'Only open to ' + loc.slice(0, 80) };
   }
+  // a place we don't know by name ("Remote - Zürich", "New York, NY (Remote)") still limits the job to that place
+  var rest = loc.replace(OK_WORLD, ' ').replace(LOCATION_FILLER, ' ').replace(/[^A-Za-zÀ-ÿ]+/g, ' ').trim();
+  if (/[A-Za-zÀ-ÿ]{3,}/.test(rest)) return { ok: 'no', why: 'Only open to ' + loc.slice(0, 80) };
   if (POSITIVE_AFRICA.test(body.replace(/south africa/ig, ' '))) return { ok: 'yes', why: 'Posting says it hires in Nigeria/Africa' };
   if (POSITIVE_TEXT.test(body)) return { ok: 'yes', why: 'Posting says it hires from anywhere' };
   if (OK_WORLD.test(loc)) return { ok: 'yes', why: 'Open worldwide: ' + loc.slice(0, 80) };

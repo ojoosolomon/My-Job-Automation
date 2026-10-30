@@ -3,9 +3,9 @@
  * JJ-Board Sheet app: pure logic (no Google services), shared by the Sheet script and the Node tests.
  */
 
-var ROLE_FAMILY = {
-  analyst: 'ic', specialist: 'ic', associate: 'ic', coordinator: 'ic', officer: 'ic', administrator: 'ic', generalist: 'ic',
-  bookkeeper: 'ic', writer: 'ic', expert: 'ic', assistant: 'ic', representative: 'ic', agent: 'ic',
+var ROLE_FAMILY = {  // "analyst" and "expert" titles are not in your role buckets: they match only word for word
+  specialist: 'ic', associate: 'ic', coordinator: 'ic', officer: 'ic', administrator: 'ic', generalist: 'ic',
+  bookkeeper: 'ic', writer: 'ic', assistant: 'ic', representative: 'ic', agent: 'ic',
   advocate: 'ic', rep: 'ic', manager: 'mgmt', lead: 'mgmt', supervisor: 'mgmt', head: 'mgmt'
 };
 // What a title is about. Two titles of the same family (e.g. "Executive Assistant" and "Virtual Assistant") that share
@@ -24,7 +24,13 @@ var CONCEPTS = {
 };
 var NEGATIVE_TITLE = ['engineer', 'developer', 'software', 'sales', 'marketing', 'nurse', 'physician', 'rn', 'lpn', 'intern',
   'therapist', 'pharmacist', 'attorney', 'counsel', 'lawyer', 'scientist', 'accountant', 'cpa', 'driver', 'technician',
-  'designer', 'director', 'vp', 'vice', 'chief', 'principal', 'teacher', 'tutor', 'translator', 'recruiter', 'trader'];
+  'designer', 'director', 'vp', 'vice', 'chief', 'principal', 'teacher', 'tutor', 'translator', 'recruiter', 'trader',
+  'analyst', 'flight', 'procurement', 'sql', 'edi', 'claims', 'fp', 'actuarial', 'underwriter', 'pilot', 'mechanic'];
+// A region in the title ("Support Specialist - LATAM", "Executive Assistant (UK)") limits the job to that region.
+var TITLE_REGION_CASE = /(^|[\s(\[,\/-])(LATAM|LatAm|APAC|EMEA|NAMER|NA|EU|UK|US|USA|U\.S\.|ANZ|DACH|CET|EST|PST)($|[\s)\],\/-])/;
+var TITLE_REGION = /\b(latin america|north america|americas|canada|europe|india|philippines|brazil|mexico|germany|france|spain|australia|japan|nordics|united states|united kingdom|south africa|kenya|egypt|poland|netherlands|zurich|london|berlin|toronto|new york|singapore)\b/i;
+// What may be left in a location after "Remote" without naming a place.
+var LOCATION_FILLER = /\b(remote|flexible|full[- ]?time|part[- ]?time|contract(or)?|permanent|temporary|freelance|optional|home|based|first|only|friendly|team|company|any|location|work|from|job|position|opportunity|role|global|distributed|virtual|telecommute|wfh|and|or|in|the|of|us)\b/ig;
 
 function words_(s) {
   return String(s || '').toLowerCase().replace(/&/g, ' and ').match(/[a-z]+/g) || [];
@@ -79,6 +85,7 @@ var RESTRICTIONS = [
   [new RegExp('\\b(authori[sz]ed|eligible|legally (able|permitted|allowed)|permitted|right) to work (in|for|within) (the\\s+)?(' + STRICT_COUNTRIES + ')\\b', 'i'), 'needs the right to work in'],
   [/\b(in|within|from) the (US|USA)\b|\b(US|USA)[- ](only|based only|residents? only|candidates only)\b/, 'only open to the US'],
   [/\b(u\.?s\.? citizens?(hip)?|green card|security clearance|public trust clearance|\bw-?2\b|\b1099\b|social security number|\bssn\b)/i, 'needs US status'],
+  [/\b(must|need to|required to|should|have to)\s+(currently\s+)?(be\s+)?(reside|residing|live|living|located|based|a resident)\s+(with)?in\s+(the\s+state\s+of\s+)?(alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming|ontario|quebec|british columbia|alberta)\b/i, 'requires living in a US state or Canadian province'],
   [/\b(not (open|available) to|cannot (hire|consider|accept)|unable to (hire|consider|accept)|excluding|except( for)?|not hiring in)\b[^.]{0,80}\b(africa|nigeria)\b/i, 'excludes Africa/Nigeria']
 ];
 var POSITIVE_TEXT = /\b(hire|hiring|work|candidates|applicants|team members?|people|talent)\b[^.]{0,60}\b(from )?(anywhere in the world|anywhere|worldwide|any country|around the world|globally|all over the world)\b|\b(fully distributed|remote-first|remote first)\b[^.]{0,80}\b(anywhere|worldwide|any country|globally)\b/i;
@@ -90,8 +97,10 @@ var POSITIVE_AFRICA = /\b(hire|hiring|based|located|candidates|applicants|open)\
  * 'no': on-site/hybrid, or restricted to other countries (US only, "must live in the UK", "authorized to work in the US"...).
  * 'review': remote but unclear (e.g. just "Remote" or "EMEA"): checked by Gemini before preparing.
  */
-function openToNigeria(location, text, workplaceType) {
+function openToNigeria(location, text, workplaceType, title) {
   var loc = String(location || '').replace(/\s+/g, ' ').trim();
+  var tl = String(title || ''), tr = tl.match(TITLE_REGION_CASE) || tl.match(TITLE_REGION);
+  if (tr && !OK_NIGERIA.test(tl) && !/\bafrica\b/i.test(tl)) return { ok: 'no', why: 'Title limits it to a region: "' + tl.slice(0, 80) + '"' };
   var body = String(text || '').replace(/\s+/g, ' ');
   var wt = String(workplaceType || '').toLowerCase().replace(/[^a-z]/g, '');
   var all = loc + ' ' + body;
@@ -120,6 +129,9 @@ function openToNigeria(location, text, workplaceType) {
       return { ok: 'review', why: 'Time zone given, country unclear: ' + loc.slice(0, 60) };
     return { ok: 'no', why: 'Only open to ' + loc.slice(0, 80) };
   }
+  // a place we don't know by name ("Remote - Zürich", "New York, NY (Remote)") still limits the job to that place
+  var rest = loc.replace(OK_WORLD, ' ').replace(LOCATION_FILLER, ' ').replace(/[^A-Za-zÀ-ÿ]+/g, ' ').trim();
+  if (/[A-Za-zÀ-ÿ]{3,}/.test(rest)) return { ok: 'no', why: 'Only open to ' + loc.slice(0, 80) };
   if (POSITIVE_AFRICA.test(body.replace(/south africa/ig, ' '))) return { ok: 'yes', why: 'Posting says it hires in Nigeria/Africa' };
   if (POSITIVE_TEXT.test(body)) return { ok: 'yes', why: 'Posting says it hires from anywhere' };
   if (OK_WORLD.test(loc)) return { ok: 'yes', why: 'Open worldwide: ' + loc.slice(0, 80) };
@@ -518,7 +530,7 @@ if (typeof module !== 'undefined') {
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-30a';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-10-30b';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
 var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back
@@ -935,7 +947,7 @@ function fetchFeed_(ats, board) {
       (JSON.parse(r.getContentText()).jobs || []).forEach(function (j) {
         var where = (j.locationRestrictions || []).map(function (x) { return typeof x === 'string' ? x : (x.name || x.country || ''); }).filter(String);
         out.push({ id: 'hm-' + hashOf_(String(j.guid || j.applicationLink || j.title)).slice(0, 12), title: j.title, employer: j.companyName,
-          location: 'Remote - ' + (where.length ? where.join(', ') : 'Worldwide (no country restriction listed)'),
+          location: where.length ? 'Remote - ' + where.join(', ') : 'Remote',  // no countries listed: unclear, checked before applying
           url: j.guid || j.applicationLink, apply: j.applicationLink || j.guid, text: stripHtml_(j.description || j.excerpt),
           posted: j.pubDate ? new Date(Number(j.pubDate) * (Number(j.pubDate) < 1e11 ? 1000 : 1)) : '',
           salary: usd(j.minSalary, j.maxSalary, j.currency), workplaceType: 'remote' });
@@ -1008,29 +1020,112 @@ function resolveApply_(url, text) {
   };
   var direct = found(url);
   if (direct) return direct;
-  var page = url, html = '';
-  try {
-    for (var hop = 0; hop < 4; hop++) {  // follow redirects ourselves, to see where they lead
-      var res = UrlFetchApp.fetch(page, { muteHttpExceptions: true, followRedirects: false });
-      var code = res.getResponseCode(), loc = (res.getHeaders() || {})['Location'] || (res.getHeaders() || {})['location'];
-      if (code >= 300 && code < 400 && loc) {
-        page = /^https?:/.test(loc) ? loc : page.split('/').slice(0, 3).join('/') + loc;
-        var hit = found(page);
-        if (hit) return hit;
-        continue;
-      }
-      if (code === 200) html = res.getContentText();
-      break;
-    }
-  } catch (e) { /* unreachable page: keep the board's link */ }
-  var links = String(html).match(/https?:\/\/[^"'\s<>]+/g) || [];
+  var first = openPage_(url);
+  if (first.hit) return first.hit;
+  // the page's own links, including those hidden in its code (JSON writes "https:\/\/..." with escaped slashes)
+  var html = String(first.html).replace(/\\u002[fF]/g, '/').replace(/\\\//g, '/').replace(/&amp;/g, '&');
+  var links = html.match(/https?:\/\/[^"'\s<>\\]+/g) || [];
   for (var i = 0; i < links.length; i++) {
     var f = found(links[i]);
     if (f) return f;
   }
   var mail = applyEmail(stripHtml_(html) + '\n' + String(text || ''));
   if (mail) return { apply: 'mailto:' + mail.email, ats: mail.subjectRule ? 'email-special' : 'email', board: '' };
-  return { apply: page || url, ats: 'other', board: '' };
+  // the employer's own apply link (named like "applicationLink"/"applyUrl", or a link labelled Apply): follow it once
+  var named = html.match(/"(?:applicationLink|applicationUrl|applyUrl|apply_url|externalApplyUrl|externalUrl|applyLink|redirectUrl)"\s*:\s*"(https?:\/\/[^"]+)"/);
+  var labelled = html.match(/<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>(?:(?!<\/a>)[\s\S]){0,120}?\bapply\b/i);
+  var ext = [named && named[1], labelled && labelled[1]].filter(function (u) { return u && !BOARD_HOSTS.test(u) && !JUNK_HOSTS.test(u); })[0];
+  if (ext) {
+    var hit2 = found(ext) || openPage_(ext, true).hit;
+    if (hit2) return hit2;
+    return { apply: ext, ats: atsOfUrl_(ext), board: '' };  // the employer's own careers page: better than the job board's
+  }
+  return { apply: first.page || url, ats: 'other', board: '' };
+
+  /** Follows redirects ourselves to see where they lead. Returns {page, html, hit}. */
+  function openPage_(start, headOnly) {
+    var page = start, out = { page: start, html: '', hit: null };
+    try {
+      for (var hop = 0; hop < 5; hop++) {
+        var res = UrlFetchApp.fetch(page, { muteHttpExceptions: true, followRedirects: false });
+        var code = res.getResponseCode(), h = res.getHeaders() || {}, loc = h['Location'] || h['location'];
+        if (code >= 300 && code < 400 && loc) {
+          page = /^https?:/.test(loc) ? loc : page.split('/').slice(0, 3).join('/') + loc;
+          out.page = page;
+          out.hit = found(page);
+          if (out.hit) return out;
+          continue;
+        }
+        if (code === 200 && !headOnly) out.html = res.getContentText();
+        break;
+      }
+    } catch (e) { /* unreachable page: keep the board's link */ }
+    return out;
+  }
+}
+
+var BOARD_HOSTS = /^https?:\/\/([^\/]*\.)?(himalayas\.app|weworkremotely\.com|remotive\.com|jobicy\.com|remoteok\.com|remoteok\.io|workingnomads\.com|arbeitnow\.[a-z.]+)\//i;
+var JUNK_HOSTS = /^https?:\/\/([^\/]*\.)?(google|googleapis|gstatic|facebook|twitter|x\.com|linkedin|instagram|youtube|cloudflare|cloudfront|jsdelivr|unpkg|schema\.org|w3\.org|gravatar|amazonaws|imgix|cdn)[^\/]*\//i;
+
+/**
+ * Jobs already listed (and not yet sent) are checked again with the current rules: out of scope → SKIPPED (then
+ * removed); unclear → Gemini check; a job board link → the employer's real application form, so the applier can send it.
+ */
+function recheckListed_(seconds) {
+  var start = Date.now(), p = profile_(), jobs = table_(TAB.JOBS), apps = table_(TAB.APPS), checks = 0, fixed = 0, dropped = 0;
+  var appOf = {};
+  apps.rows.forEach(function (r, i) { appOf[r[apps.col['Job ID']]] = { row: i + 2, r: r }; });
+  var sent = SENT_STATUSES.concat(['SUBMITTED', 'SUBMITTING']);
+  jobs.rows.forEach(function (r, i) {
+    if (Date.now() - start > seconds * 1000) return;
+    var st = String(r[jobs.col['Status']]), id = r[jobs.col['Job ID']], app = appOf[id];
+    if (!(st === 'NEW' || st === 'PREPARED')) return;
+    if (app && (sent.indexOf(app.r[apps.col['Status']]) >= 0 || /^APPLIED MYSELF|^REJECT/.test(app.r[apps.col['Decision']]))) return;
+    var row = i + 2, title = r[jobs.col['Title']], why = String(r[jobs.col['Why eligible']] || '');
+    var skip = function (reason) {
+      setCells_(jobs, row, { 'Status': 'SKIPPED — ' + reason.slice(0, 200), 'Open to Nigeria': 'no', 'Why eligible': reason });
+      if (app) setCells_(apps, app.row, { 'Status': 'SKIPPED', 'Result': reason.slice(0, 200), 'Updated': new Date() });
+      dropped++;
+    };
+    if (matchTitle(title, p.titles).match === 'none' && !/added by hand/.test(r[jobs.col['Title match']])) return skip('Title is not one of your target roles');
+    if (!/^Checked:|added by hand/.test(why)) {
+      var o = openToNigeria(r[jobs.col['Location']], r[jobs.col['Description']], '', title);
+      if (o.ok === 'no') return skip(o.why);
+      if (o.ok === 'review' && r[jobs.col['Open to Nigeria']] === 'yes') {
+        if (checks >= 6) return;
+        checks++;
+        var v;
+        try { v = checkNigeria_({ employer: r[jobs.col['Employer']], title: title, location: r[jobs.col['Location']], text: r[jobs.col['Description']] }); }
+        catch (e) { checks = 99; return; }  // free Gemini allowance used up: next run
+        if (v.ok === 'no') return skip(v.why);
+        if (v.ok === 'yes') setCells_(jobs, row, { 'Why eligible': v.why });
+      }
+    }
+    var applyUrl = String(r[jobs.col['Apply URL']] || '');
+    if (!BOARD_HOSTS.test(applyUrl) || fixed >= 10) return;
+    var res = resolveApply_(applyUrl, r[jobs.col['Description']]);
+    if (res.apply === applyUrl) return;
+    fixed++;
+    setCells_(jobs, row, { 'ATS': res.ats, 'Board': res.board, 'Apply URL': res.apply });
+    if (!app) return;
+    var upd = { 'Updated': new Date() };
+    try {  // the approval check covers the files and the application address: record the new address
+      var resume = DriveApp.getFileById(fileId_(app.r[apps.col['Resume PDF']])).getBlob();
+      var cover = DriveApp.getFileById(fileId_(app.r[apps.col['Cover letter PDF']])).getBlob();
+      upd['Package hash'] = bytesHash_([resume, cover], r[jobs.col['Job URL']] + '|' + res.apply);
+    } catch (e) { return; }
+    if ((AUTO_ATS.indexOf(res.ats) >= 0 || res.ats === 'email') && passed_(app.r[apps.col['Fact check']])) {
+      upd['Status'] = 'READY FOR YOUR DECISION';
+      upd['Decision'] = 'PENDING';
+      upd['Result'] = 'Found the employer\'s application form (' + res.ats + '): it can now be sent automatically.';
+    } else {
+      upd['Result'] = 'This application is on the employer\'s own site: ' + res.apply.slice(0, 120) + ' Open it and upload the prepared PDFs.';
+    }
+    setCells_(apps, app.row, upd);
+    history_(app.r[apps.col['App ID']], 'Application address found: ' + res.apply.slice(0, 150) + ' (' + res.ats + ')');
+  });
+  if (fixed || dropped) log_('RECHECK', dropped + ' listed job(s) now out of scope (removed); ' + fixed + ' job board link(s) replaced by the employer\'s application page');
+  return { fixed: fixed, dropped: dropped };
 }
 
 function ashbyPay_(c) {
@@ -1167,6 +1262,7 @@ function findJobs() {
   ensureColumns_(TAB.JOBS, JOB_COLS);
   removeLowFitJobs_(settings_().minFit);  // first, so a removed job can come back if it qualifies later
   removeOldJobs_(settings_().maxAge);
+  try { recheckListed_(60); } catch (e) { log_('RECHECK_FAILED', e.message); }
   removeOutOfScope_();
   var p = profile_();
   var jobs = table_(TAB.JOBS);
@@ -1211,7 +1307,7 @@ function findJobs() {
       if (!postedWithin(j.posted, maxAge)) { tooOld++; return; }  // only jobs posted in the last 24 hours (Set maximum job age)
       var tm = matchTitle(j.title, p.titles);
       if (tm.match === 'none') return;
-      var open = openToNigeria(j.location, j.text, j.workplaceType);  // only jobs that hire someone living in Nigeria
+      var open = openToNigeria(j.location, j.text, j.workplaceType, j.title);  // only jobs that hire someone living in Nigeria
       if (open.ok === 'no') { elsewhere++; notOpen[open.why.split(':')[0]] = (notOpen[open.why.split(':')[0]] || 0) + 1; return; }
       var pay = parseSalary(j.salary, j.text);
       if (pay && p.salaryMin && pay.max < p.salaryMin) { lowPay++; return; }  // clearly below your minimum
@@ -1730,6 +1826,7 @@ function appliedRecently_(employer) {
 function prepareNew() {
   var s = settings_();
   var p = profile_();
+  try { recheckListed_(90); } catch (e) { log_('RECHECK_FAILED', e.message); }  // real application forms first, out-of-scope out
   ensureColumns_(TAB.JOBS, JOB_COLS);
   var jobs = table_(TAB.JOBS);
   var cands = [], leverOff = leverBlocked_();

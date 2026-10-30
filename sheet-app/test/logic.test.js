@@ -9,6 +9,8 @@ assert.equal(L.matchTitle('Client Support Representative', T).match, 'similar');
 assert.equal(L.matchTitle('Software Engineer, Operations', T).match, 'none');
 assert.equal(L.matchTitle('Sales Development Representative', T).match, 'none');
 assert.equal(L.matchTitle('Registered Nurse', T).match, 'none');
+['Senior Flight Operations Expert', 'Revenue Cycle Systems Analyst', 'Business Analyst III - Encounters Claims EDI SQL',
+  'Procurement & Project Controls Manager', 'Senior FP&A Expert'].forEach(t => assert.equal(L.matchTitle(t, T).match, 'none', t));
 
 // open to someone living in Nigeria: worldwide, Africa or Nigeria; never US/UK/EU-only, on-site or hybrid
 const N = (loc, text, wt) => L.openToNigeria(loc, text || '', wt).ok;
@@ -33,6 +35,16 @@ assert.equal(N('Remote', 'Tell us why you want to work for us.'), 'review', '"fo
 assert.equal(N('Remote (EMEA)'), 'review');
 assert.equal(N('Remote (EST)'), 'review', 'a time zone is not a country rule (you work any hours)');
 assert(/US/.test(L.openToNigeria('Remote - US', '').why), 'the reason is recorded');
+// region in the title, unknown place names, US states
+assert.equal(L.openToNigeria('Remote', '', '', 'Product Support Specialist - LATAM').ok, 'no');
+assert.equal(L.openToNigeria('Remote', '', '', 'Executive Assistant (UK)').ok, 'no');
+assert.equal(L.openToNigeria('Remote - Nigeria', '', '', 'Customer Support - Africa').ok, 'yes');
+assert.equal(L.openToNigeria('Remote', '', '', 'Virtual Assistant').ok, 'review', 'a plain title is fine');
+assert.equal(L.openToNigeria('Remote - Zürich', '').ok, 'no');
+assert.equal(L.openToNigeria('New York, NY (Remote)', '').ok, 'no');
+assert.equal(L.openToNigeria('Remote - Flexible', '').ok, 'review', 'filler words are not a place');
+assert.equal(L.openToNigeria('Remote', 'Applicants must reside in Arizona.').ok, 'no');
+assert.equal(L.openToNigeria('Remote - Anywhere in the World', '').ok, 'yes');
 console.log('Nigeria eligibility ok');
 
 // work authorization depends on the country asked about

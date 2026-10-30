@@ -30,6 +30,7 @@ const api = new Function(...Object.keys(env), src + `
   fitScore = function (j) { return Number(String(j.title).slice(1)); };
   prepareJob_ = function (id) { __prepared.push(id); var t = table_(TAB.JOBS); setCells_(t, findRow_(t, 'Job ID', id), { 'Status': 'PREPARED' }); return 'Prepared'; };
   autoApprove_ = function () {};
+  recheckListed_ = function () {};  // tested in recheck.test.js; these test titles are placeholders
   return { prepareNew };`.replace('__prepared', 'globalThis.__prepared'))(...Object.values(env));
 globalThis.__prepared = prepared;
 api.prepareNew();
