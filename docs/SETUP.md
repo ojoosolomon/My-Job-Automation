@@ -98,8 +98,16 @@ when all of these hold:
 - you have not applied to that employer in the last 30 days;
 - the day's limit is not reached.
 
-The default limit is **8 a day**, best fit first. Change it with **Job Board → Set daily application limit**. On
-the free Gemini key, 8 to 10 a day is the safe maximum: each application uses 2 to 4 Gemini requests.
+Two daily targets, best fit first:
+
+- **Sent automatically:** up to **8 a day** (Greenhouse, Lever, Ashby, Workable... and email applications). Change it
+  with **Job Board → Set daily auto-apply target**.
+- **Prepared for you to send yourself:** **4 a day** (employer career sites, Workday...), listed in **Cannot apply**
+  with the documents ready. Change it with **Job Board → Set daily apply-yourself target**.
+
+Each prepared application uses 2 to 4 free Gemini requests, so about 12 a day is the most one free key handles. How
+many are sent automatically also depends on how many fresh jobs open to Nigeria are on sites the applier can fill
+that day. A longer **maximum job age** (48 or 72 hours) gives it more to choose from.
 
 **Who it applies to.** Remote jobs only, and only when the job is open to someone living in Nigeria:
 

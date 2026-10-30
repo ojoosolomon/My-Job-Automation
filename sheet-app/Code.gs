@@ -530,7 +530,7 @@ if (typeof module !== 'undefined') {
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-30b';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-10-30c';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
 var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back
@@ -580,7 +580,8 @@ function onOpen() {
     .addItem('Check inbox now', 'checkInbox')
     .addSeparator()
     .addItem('Auto-apply: turn on / off', 'toggleAutoApply')
-    .addItem('Set daily application limit', 'setDailyLimit')
+    .addItem('Set daily auto-apply target', 'setDailyLimit')
+    .addItem('Set daily apply-yourself target', 'setManualLimit')
     .addItem('Set minimum fit %', 'setMinFit')
     .addItem('Set maximum job age (hours)', 'setMaxAge')
     .addItem('Send today\'s summary email now', 'dailySummary')
@@ -1770,7 +1771,8 @@ function prepareSelected() {
 function settings_() {
   var props = PropertiesService.getScriptProperties();
   return { auto: props.getProperty('AUTO_APPLY') !== 'off', limit: Number(props.getProperty('DAILY_LIMIT') || 8),
-    minFit: Number(props.getProperty('MIN_FIT') || 60), maxAge: Number(props.getProperty('MAX_AGE_HOURS') || 24) };
+    minFit: Number(props.getProperty('MIN_FIT') || 60), maxAge: Number(props.getProperty('MAX_AGE_HOURS') || 24),
+    manual: Number(props.getProperty('MANUAL_LIMIT') || 4) };  // limit: sent automatically a day; manual: prepared for you a day
 }
 
 function sameDay_(a, b) {
@@ -1851,16 +1853,16 @@ function prepareNew() {
   for (var i = 0; i < cands.length && n < perRun; i++) {
     var c = cands[i];
     if (s.auto && autoToday_() >= s.limit) { why.stopped = 'daily limit of ' + s.limit + ' applications reached'; break; }
-    if (preparedToday_() >= s.limit + 5) { why.stopped = 'prepared ' + (s.limit + 5) + ' today (protects the free Gemini quota)'; break; }
+    if (preparedToday_() >= s.limit + s.manual + 4) { why.stopped = 'prepared ' + (s.limit + s.manual + 4) + ' today (protects the free Gemini quota)'; break; }
     if (c.score < s.minFit) {
       why.lowFit++;
       setCells_(jobs = table_(TAB.JOBS), findRow_(jobs, 'Job ID', c.id), { 'Status': 'SKIPPED — fit ' + c.score + '% is below ' + s.minFit + '%' });
       continue;
     }
     c.done = true;
-    // Jobs you submit yourself (employer career sites, Workday...) come after the ones the applier can send. They wait only
-    // while such an automatic job is still waiting, or once a day's worth of them (the daily limit) has been prepared.
-    if (c.tier === 3 && (cands.some(function (x) { return x.tier < 3 && !x.done && x.score >= s.minFit; }) || hersToday_() >= s.limit)) {
+    // Jobs you submit yourself (employer career sites, Workday...) come after the ones the applier can send in each run, up
+    // to the daily apply-yourself target (default 4); the best-fit ones first.
+    if (c.tier === 3 && hersToday_() >= s.manual) {
       why.yoursLater++;
       continue;
     }
@@ -2074,12 +2076,24 @@ function toggleAutoApply() {
 
 function setDailyLimit() {
   var ui = SpreadsheetApp.getUi();
-  var r = ui.prompt('Daily limit', 'How many applications a day? (now ' + settings_().limit + '; 15 a day is about 100 a week)', ui.ButtonSet.OK_CANCEL);
+  var r = ui.prompt('Daily auto-apply target', 'How many applications a day should be SENT AUTOMATICALLY at most? (now ' +
+    settings_().limit + '). Each uses 2-4 free Gemini requests; about 8-10 a day fits the free key.', ui.ButtonSet.OK_CANCEL);
   var n = parseInt(r.getResponseText(), 10);
   if (r.getSelectedButton() !== ui.Button.OK || !(n >= 1 && n <= 30)) return;
   PropertiesService.getScriptProperties().setProperty('DAILY_LIMIT', String(n));
   log_('DAILY_LIMIT', n);
-  ui.alert('Daily limit set to ' + n + '.');
+  ui.alert('Up to ' + n + ' applications a day are sent automatically.');
+}
+
+function setManualLimit() {
+  var ui = SpreadsheetApp.getUi();
+  var r = ui.prompt('Daily apply-yourself target', 'How many applications a day should be PREPARED FOR YOU to send yourself ' +
+    '(employer career sites, Workday...)? (now ' + settings_().manual + ')', ui.ButtonSet.OK_CANCEL);
+  var n = parseInt(r.getResponseText(), 10);
+  if (r.getSelectedButton() !== ui.Button.OK || !(n >= 0 && n <= 30)) return;
+  PropertiesService.getScriptProperties().setProperty('MANUAL_LIMIT', String(n));
+  log_('MANUAL_LIMIT', n);
+  ui.alert(n + ' applications a day are prepared for you to send yourself.');
 }
 
 function setMaxAge() {
@@ -2143,7 +2157,9 @@ function dailySummary() {
     (p.work_authorized_countries || f.country), 'Requires sponsorship: ' + p.requires_sponsorship, 'Rate: ' + (p.hourly_rate || p.desired_salary),
     'Years of experience: ' + f.years_experience, 'Education: ' + [f.degree, f.school].filter(String).join(', '), 'Start: ' + f.notice_period,
     'Payment: ' + (p.payment_method || ''), 'How you heard: company careers site'].join(' · ');
+  var st = settings_();
   var html = '<p>Job Board, ' + Utilities.formatDate(now, Session.getScriptTimeZone(), 'EEEE d MMMM yyyy') + '</p>' +
+    '<p><b>Today: ' + applied.length + ' sent (target: ' + st.limit + ' automatically + ' + st.manual + ' by you).</b></p>' +
     (total ? '<p><b>So far: ' + auto + ' of ' + total + ' applications sent automatically (' + Math.round(100 * auto / total) +
       '%)</b>, ' + mine + ' sent by your, ' + handed + ' waiting for your.</p>' : '') +
     (pendingQuestions_() ? '<p><b>' + pendingQuestions_() + ' question(s) are waiting for your answer in the Answers tab.</b> ' +
