@@ -495,6 +495,7 @@ var QUESTION_BANK = [
   { q: 'What is your typing speed (WPM)?', re: 'typing speed|words per minute|\\bwpm\\b', a: '', why: 'Only you can say.' },
   // agreement-style questions
   { q: 'Do you agree to the company\'s privacy policy / data processing?', re: 'privacy (policy|notice)|data (processing|protection)|gdpr|personal (data|information)', a: 'Yes', why: 'Needed to apply.' },
+  { q: 'Data transfer: do you consent to your application data being transferred and processed in other countries?', re: '^data transfer|data transfer (consent|agreement|notice)|consent to (the )?(international )?(transfer|processing) of (my |your )?(personal )?data|transfer (of )?(my |your )?(personal )?data (outside|to other|internationally|across)', a: 'Yes', why: 'Needed to apply from Nigeria to a foreign employer.' },
   { q: 'Do you agree to an arbitration agreement?', re: 'arbitration', a: 'Yes', why: 'Default: please check.' },
   { q: 'Will you sign a confidentiality / NDA agreement if hired?', re: 'confidentiality|non-?disclosure|\\bnda\\b', a: 'Yes', why: 'Default.' },
   { q: 'Will you complete a pre-employment assessment or trial task if asked?', re: 'assessment|skills test|work sample|trial (task|project|period)|test task', a: 'Yes', why: 'Default.' },
@@ -517,7 +518,7 @@ if (typeof module !== 'undefined') {
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-29f';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-10-30a';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
 var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back
