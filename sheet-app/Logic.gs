@@ -138,6 +138,31 @@ function openToNigeria(location, text, workplaceType, title) {
 }
 
 /**
+ * Signs of a fake job: a fee or money asked of the applicant, payment by transfer services, chat-only contact, or "earn
+ * $500 a day" promises. Returns the reason, or '' when there are none.
+ */
+var SCAM_SIGNS = [
+  [/\b(application|registration|processing|training|onboarding|medical|screening|form|interview|security|refundable) fees?\b/i, 'asks for a fee'],
+  [/\bpay (a |the |an )?(small )?(fee|token|deposit|charge)\b|\bsend (us )?money\b|\bpay(ment)? (before|to secure|to start)\b/i, 'asks the applicant to pay'],
+  [/\b(western union|moneygram|gift cards?|bitcoin deposit|crypto deposit)\b/i, 'asks for payment by transfer service'],
+  [/\b(contact|apply|message|reach) (us )?(only )?(via|on|through) (whatsapp|telegram)( only)?\b|\b(whatsapp|telegram) only\b/i, 'chat-app-only contact'],
+  [/\bearn (up to )?(\$|₦|n)?\s?\d[\d,]{2,}.{0,25}\b(daily|per day|a day|weekly|per week)\b/i, '"earn a lot quickly" promise']
+];
+function scamSigns(text) {
+  var t = String(text || '');
+  for (var i = 0; i < SCAM_SIGNS.length; i++) {
+    var m = t.match(SCAM_SIGNS[i][0]);
+    if (m) return SCAM_SIGNS[i][1] + ': "' + m[0].slice(0, 60) + '"';
+  }
+  return '';
+}
+
+/** A personal email address (Gmail, Yahoo...) to apply to: real for some small employers, but also used by fake jobs. */
+function personalEmail(address) {
+  return /@(gmail|googlemail|yahoo|ymail|hotmail|outlook|live|aol|icloud|proton(mail)?|mail|zoho|yandex|gmx)\.[a-z.]+$/i.test(String(address || ''));
+}
+
+/**
  * When a job was posted, as a Date (or null if unknown). Takes a Date, an ISO/RFC date string, or Unix time in seconds or
  * milliseconds.
  */
@@ -516,5 +541,5 @@ var QUESTION_BANK = [
 if (typeof module !== 'undefined') {
   module.exports = { matchTitle: matchTitle, openToNigeria: openToNigeria, numbersIn: numbersIn, checkPackage: checkPackage,
     answerFor: answerFor, workAuthorized: workAuthorized, classifyEmail: classifyEmail, matchEmail: matchEmail, applyEmail: applyEmail,
-    fitScore: fitScore, formFacts: formFacts, postedDate: postedDate, postedWithin: postedWithin, verifyAnswers: verifyAnswers, parseSalary: parseSalary, QUESTION_BANK: QUESTION_BANK };
+    fitScore: fitScore, formFacts: formFacts, scamSigns: scamSigns, personalEmail: personalEmail, postedDate: postedDate, postedWithin: postedWithin, verifyAnswers: verifyAnswers, parseSalary: parseSalary, QUESTION_BANK: QUESTION_BANK };
 }

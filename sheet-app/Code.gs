@@ -139,6 +139,31 @@ function openToNigeria(location, text, workplaceType, title) {
 }
 
 /**
+ * Signs of a fake job: a fee or money asked of the applicant, payment by transfer services, chat-only contact, or "earn
+ * $500 a day" promises. Returns the reason, or '' when there are none.
+ */
+var SCAM_SIGNS = [
+  [/\b(application|registration|processing|training|onboarding|medical|screening|form|interview|security|refundable) fees?\b/i, 'asks for a fee'],
+  [/\bpay (a |the |an )?(small )?(fee|token|deposit|charge)\b|\bsend (us )?money\b|\bpay(ment)? (before|to secure|to start)\b/i, 'asks the applicant to pay'],
+  [/\b(western union|moneygram|gift cards?|bitcoin deposit|crypto deposit)\b/i, 'asks for payment by transfer service'],
+  [/\b(contact|apply|message|reach) (us )?(only )?(via|on|through) (whatsapp|telegram)( only)?\b|\b(whatsapp|telegram) only\b/i, 'chat-app-only contact'],
+  [/\bearn (up to )?(\$|₦|n)?\s?\d[\d,]{2,}.{0,25}\b(daily|per day|a day|weekly|per week)\b/i, '"earn a lot quickly" promise']
+];
+function scamSigns(text) {
+  var t = String(text || '');
+  for (var i = 0; i < SCAM_SIGNS.length; i++) {
+    var m = t.match(SCAM_SIGNS[i][0]);
+    if (m) return SCAM_SIGNS[i][1] + ': "' + m[0].slice(0, 60) + '"';
+  }
+  return '';
+}
+
+/** A personal email address (Gmail, Yahoo...) to apply to: real for some small employers, but also used by fake jobs. */
+function personalEmail(address) {
+  return /@(gmail|googlemail|yahoo|ymail|hotmail|outlook|live|aol|icloud|proton(mail)?|mail|zoho|yandex|gmx)\.[a-z.]+$/i.test(String(address || ''));
+}
+
+/**
  * When a job was posted, as a Date (or null if unknown). Takes a Date, an ISO/RFC date string, or Unix time in seconds or
  * milliseconds.
  */
@@ -517,7 +542,7 @@ var QUESTION_BANK = [
 if (typeof module !== 'undefined') {
   module.exports = { matchTitle: matchTitle, openToNigeria: openToNigeria, numbersIn: numbersIn, checkPackage: checkPackage,
     answerFor: answerFor, workAuthorized: workAuthorized, classifyEmail: classifyEmail, matchEmail: matchEmail, applyEmail: applyEmail,
-    fitScore: fitScore, formFacts: formFacts, postedDate: postedDate, postedWithin: postedWithin, verifyAnswers: verifyAnswers, parseSalary: parseSalary, QUESTION_BANK: QUESTION_BANK };
+    fitScore: fitScore, formFacts: formFacts, scamSigns: scamSigns, personalEmail: personalEmail, postedDate: postedDate, postedWithin: postedWithin, verifyAnswers: verifyAnswers, parseSalary: parseSalary, QUESTION_BANK: QUESTION_BANK };
 }
 /**
  * Job Board Sheet app: lives inside your Google Sheet (Extensions → Apps Script).
@@ -530,7 +555,7 @@ if (typeof module !== 'undefined') {
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-30c';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-10-30d';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
 var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back
@@ -857,9 +882,14 @@ var STARTER_COMPANIES = [
   ['Jobicy: management jobs', 'jobicy', 'industry=management', 'jobicy.com'],
   ['Jobicy: assistant jobs', 'jobicy', 'tag=assistant', 'jobicy.com'],
   ['Arbeitnow (Germany/Europe): page 1', 'arbeitnow', '1', 'arbeitnow.com'],
-  ['Arbeitnow (Germany/Europe): page 2', 'arbeitnow', '2', 'arbeitnow.com']
+  ['Arbeitnow (Germany/Europe): page 2', 'arbeitnow', '2', 'arbeitnow.com'],
+  // Nigerian job boards (RSS feeds: ATS = rss, Board = the feed address). Remote jobs only are kept, as everywhere.
+  ['HotNigerianJobs (Nigeria)', 'rss', 'https://www.hotnigerianjobs.com/feed/', 'hotnigerianjobs.com'],
+  ['MyJobMag (Nigeria)', 'rss', 'https://www.myjobmag.com/feed', 'myjobmag.com'],
+  ['NGCareers (Nigeria)', 'rss', 'https://ngcareers.com/feed', 'ngcareers.com'],
+  ['Jobs in Nigeria: Remotive search', 'remotive', 'search:nigeria', 'remotive.com']
 ];
-var AGGREGATORS = ['remotive', 'himalayas', 'jobicy', 'remoteok', 'weworkremotely', 'workingnomads', 'arbeitnow'];
+var AGGREGATORS = ['remotive', 'himalayas', 'jobicy', 'remoteok', 'weworkremotely', 'workingnomads', 'arbeitnow', 'rss'];
 
 function stripHtml_(html) {
   return String(html || '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"')
@@ -871,7 +901,8 @@ function boardUrl_(ats, board) {
   return {
     greenhouse: 'https://boards-api.greenhouse.io/v1/boards/' + board + '/jobs?content=true&pay_transparency=true',
     lever: 'https://api.lever.co/v0/postings/' + board + '?mode=json',
-    ashby: 'https://api.ashbyhq.com/posting-api/job-board/' + board + '?includeCompensation=true'
+    ashby: 'https://api.ashbyhq.com/posting-api/job-board/' + board + '?includeCompensation=true',
+    workable: 'https://apply.workable.com/api/v1/widget/accounts/' + board + '?details=true'
   }[ats];
 }
 
@@ -904,6 +935,14 @@ function fetchBoard_(ats, board, prefetched) {
     return { id: 'gh-' + j.id, title: j.title, location: (j.location || {}).name, url: j.absolute_url,
       apply: 'https://boards.greenhouse.io/embed/job_app?for=' + board + '&token=' + j.id, text: stripHtml_(j.content),
       posted: j.first_published || '', salary: pay ? { min: pay.min_cents / 100, max: pay.max_cents / 100, interval: pay.title } : null };
+  });
+  if (ats === 'workable') return (d.jobs || []).map(function (j) {
+    var place = [j.city, j.state, j.country].filter(String).join(', ');
+    var base = j.url || j.shortlink || ('https://apply.workable.com/' + board + '/j/' + j.shortcode + '/');
+    return { id: 'wk-' + (j.shortcode || hashOf_(base).slice(0, 10)), title: j.title, employer: d.name || '',
+      location: j.telecommuting ? 'Remote - ' + (place || 'not stated') : place, workplaceType: j.telecommuting ? 'remote' : '',
+      url: base, apply: j.application_url || base.replace(/\/?$/, '/') + 'apply/', text: stripHtml_(j.description || ''),
+      posted: j.created_at || j.published_on || '', salary: null };
   });
   if (ats === 'lever') return d.map(function (j) {
     var lists = (j.lists || []).map(function (x) { return x.text + '\n' + stripHtml_(x.content); }).join('\n');
@@ -992,6 +1031,30 @@ function fetchFeed_(ats, board) {
           apply: j.url, text: stripHtml_(j.description), posted: j.created_at, salary: null, workplaceType: 'remote' };
       });
   }
+  if (ats === 'rss') {  // any RSS or Atom job feed (e.g. Nigerian job boards); Board = the feed's address
+    var rr = UrlFetchApp.fetch(board, { muteHttpExceptions: true });
+    if (rr.getResponseCode() !== 200) throw new Error(board.split('/')[2] + ' HTTP ' + rr.getResponseCode());
+    var root = XmlService.parse(rr.getContentText()).getRootElement(), items = [], atom = root.getNamespace();
+    var chan = root.getChild('channel');
+    if (chan) items = chan.getChildren('item').map(function (it) {
+      return { t: it.getChildText('title'), link: it.getChildText('link') || it.getChildText('guid'), d: it.getChildText('description'),
+        date: it.getChildText('pubDate') };
+    });
+    else items = root.getChildren('entry', atom).map(function (it) {
+      var l = it.getChild('link', atom);
+      return { t: it.getChildText('title', atom), link: l ? l.getAttribute('href').getValue() : '', d: it.getChildText('summary', atom) ||
+        it.getChildText('content', atom), date: it.getChildText('published', atom) || it.getChildText('updated', atom) };
+    });
+    return items.filter(function (x) { return x.t && x.link; }).map(function (x) {
+      var text = stripHtml_(x.d), t = String(x.t).trim();
+      // "Job Title at Company" / "Company Recruitment for Job Title"; "Location: Lagos" in the text
+      var at = t.match(/^(.+?)\s+at\s+(.+)$/), rec = t.match(/^(.+?)\s+(?:is )?(?:recruiting|recruitment|hiring|job recruitment)\s+(?:for\s+)?(?:an?\s+)?(.+)$/i);
+      var where = (text.match(/\blocation\s*:?\s*([^\n.;|]{2,60})/i) || [])[1] || '';
+      return { id: 'rs-' + hashOf_(x.link).slice(0, 12), title: at ? at[1] : rec ? rec[2] : t, employer: at ? at[2] : rec ? rec[1] : '',
+        location: where.trim() || 'Nigeria (location not stated)', url: x.link, apply: x.link, text: t + '\n' + text,
+        posted: x.date ? new Date(x.date) : '', salary: null };
+    });
+  }
   if (ats === 'workingnomads') {
     return getJson_('https://www.workingnomads.com/api/exposed_jobs/').map(function (j) {
       return { id: 'wn-' + hashOf_(String(j.url)).slice(0, 12), title: j.title, employer: j.company_name,
@@ -1031,7 +1094,8 @@ function resolveApply_(url, text) {
     if (f) return f;
   }
   var mail = applyEmail(stripHtml_(html) + '\n' + String(text || ''));
-  if (mail) return { apply: 'mailto:' + mail.email, ats: mail.subjectRule ? 'email-special' : 'email', board: '' };
+  // a personal address (Gmail, Yahoo...) is never emailed automatically: you check the employer is real first
+  if (mail) return { apply: 'mailto:' + mail.email, ats: mail.subjectRule || personalEmail(mail.email) ? 'email-special' : 'email', board: '' };
   // the employer's own apply link (named like "applicationLink"/"applyUrl", or a link labelled Apply): follow it once
   var named = html.match(/"(?:applicationLink|applicationUrl|applyUrl|apply_url|externalApplyUrl|externalUrl|applyLink|redirectUrl)"\s*:\s*"(https?:\/\/[^"]+)"/);
   var labelled = html.match(/<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>(?:(?!<\/a>)[\s\S]){0,120}?\bapply\b/i);
@@ -1196,7 +1260,7 @@ var CANDIDATE_EMPLOYERS = [
   'Hnry', 'Eucalyptus', 'Leonardo.Ai=leonardoai', 'Prospection', 'Instaclustr', 'Simple=simple|simplecommerce', 'Mable'];
 
 /** Changes when the employer list in the code changes, so new employers are looked up after an update. */
-function employersKey_() { return hashOf_(CANDIDATE_EMPLOYERS.join('|')).slice(0, 12); }
+function employersKey_() { return hashOf_('greenhouse,lever,ashby,workable|' + CANDIDATE_EMPLOYERS.join('|')).slice(0, 12); }
 
 function boardGuesses_(name) {
   var known = String(name).split('=')[1];
@@ -1229,6 +1293,7 @@ function findEmployers_(seconds) {
       tries.push({ name: display, ats: 'greenhouse', board: b, url: 'https://boards-api.greenhouse.io/v1/boards/' + b + '/jobs' });
       tries.push({ name: display, ats: 'lever', board: b, url: 'https://api.lever.co/v0/postings/' + b + '?mode=json&limit=1' });
       tries.push({ name: display, ats: 'ashby', board: b, url: 'https://api.ashbyhq.com/posting-api/job-board/' + b });
+      tries.push({ name: display, ats: 'workable', board: b, url: 'https://apply.workable.com/api/v1/widget/accounts/' + b });
     });
   });
   var found = {}, added = 0;
@@ -1281,7 +1346,7 @@ function findJobs() {
   var companies = [];
   ct.rows.forEach(function (r, i) { if (r[0] && r[1] && r[2] && !/^not found/.test(r[4])) companies.push({ r: r, row: i + 2 }); });
   var added = 0, matched = 0, already = 0, lowFit = 0, elsewhere = 0, lowPay = 0, errors = [], minFit = settings_().minFit;
-  var start = t0, resolved = 0, notOpen = {}, tooOld = 0, maxAge = settings_().maxAge;
+  var start = t0, resolved = 0, notOpen = {}, tooOld = 0, scams = 0, maxAge = settings_().maxAge;
   jobs.rows.forEach(function (r) { seen[seenKey_(r[jobs.col['Employer']], r[jobs.col['Title']])] = true; });
   // the job boards are searched in turn: a run that hits the time limit carries on from there next time
   var off = Number(props.getProperty('FIND_OFFSET') || 0) % Math.max(1, companies.length), skipped = 0;
@@ -1310,6 +1375,8 @@ function findJobs() {
       if (tm.match === 'none') return;
       var open = openToNigeria(j.location, j.text, j.workplaceType, j.title);  // only jobs that hire someone living in Nigeria
       if (open.ok === 'no') { elsewhere++; notOpen[open.why.split(':')[0]] = (notOpen[open.why.split(':')[0]] || 0) + 1; return; }
+      var scam = scamSigns(j.title + '\n' + j.text);
+      if (scam) { scams++; log_('POSSIBLE_SCAM_SKIPPED', (j.employer || c[0]) + ' — ' + j.title + ': ' + scam + ' ' + j.url); return; }
       var pay = parseSalary(j.salary, j.text);
       if (pay && p.salaryMin && pay.max < p.salaryMin) { lowPay++; return; }  // clearly below your minimum
       var score = fitScore({ title: j.title, text: j.text, remote: open.ok }, p.titles, p.cv_text);
@@ -1336,6 +1403,7 @@ function findJobs() {
     ', already in Jobs ' + already + '); below ' + minFit + '% not listed: ' + lowFit + '; not open to Nigeria: ' + elsewhere +
     (elsewhere ? ' (' + Object.keys(notOpen).map(function (k) { return k + ' ' + notOpen[k]; }).join(', ') + ')' : '') +
     '; salary below ' + (p.salaryMin || '-') + ': ' + lowPay + '; posted more than ' + maxAge + ' h ago or no date: ' + tooOld +
+    '; possible scams skipped: ' + scams +
     (errors.length ? '; sources with problems: ' + errors.join('; ') : ''));
   return added;
 }
@@ -1960,7 +2028,10 @@ function autoApprove_(appId, score, s) {
   } else {
     setCells_(apps, row, { 'Status': 'APPLY YOURSELF', 'Updated': new Date(), 'Result': ats === 'lever' ?
       'Lever has been blocking automatic submissions with a hidden CAPTCHA, so this one is yours: open the application page and ' +
-      'upload the prepared PDFs (about 3 minutes).' : 'This application is on ' + (ats === 'other' ? 'the employer\'s own site' :
+      'upload the prepared PDFs (about 3 minutes).' : ats === 'email-special' ? 'Email application to ' +
+      String(jobs.rows[findRow_(jobs, 'Job ID', r[apps.col['Job ID']]) - 2][jobs.col['Apply URL']]).replace('mailto:', '') +
+      ': send it yourself from Gmail with the two PDFs attached (special instructions, or a personal address: check the ' +
+      'employer is real first).' : 'This application is on ' + (ats === 'other' ? 'the employer\'s own site' :
       ats || 'an unknown site') + ', which needs an account or can\'t be filled in automatically. Open the application page and ' +
       'upload the prepared PDFs (about 3 minutes).' });
     history_(appId, 'Not auto-applied: this site can\'t be filled in automatically. Listed in the evening email.');
@@ -2287,8 +2358,9 @@ function prepareJob_(jobId) {
     'Check details': problems.slice(0, 8).join('\n'), 'Package hash': hash, 'Decision': 'PENDING', 'Decision time': '',
     'Status': problems.length ? 'NEEDS YOUR CHECK' : 'READY FOR YOUR DECISION', 'Updated': new Date(),  // auto-apply picks it up
     'Result': job.ats === 'email' ? 'If approved, it will be EMAILED from your Gmail to ' + String(job.apply).replace('mailto:', '') +
-      ' with the resume and cover letter attached.' : job.ats === 'email-special' ? 'Email application with special instructions ' +
-      '(e.g. a required subject line): if approved, you send it yourself.' : ''
+      ' with the resume and cover letter attached.' : job.ats === 'email-special' ? 'Email application to ' +
+      String(job.apply).replace('mailto:', '') + ': send it yourself from Gmail with the two PDFs attached (the posting has ' +
+      'special instructions, or it is a personal address: check the employer is real first).' : ''
   };
   ensureColumns_(TAB.APPS, APP_COLS);
   apps = table_(TAB.APPS);

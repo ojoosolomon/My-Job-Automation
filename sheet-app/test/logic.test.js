@@ -186,3 +186,12 @@ assert.equal(L.postedWithin('', 24, now), false, 'no date: not counted as recent
 assert.equal(L.postedWithin('not a date', 24, now), false);
 assert.equal(L.postedWithin('2026-10-27T12:00:00Z', 72, now), true, 'a longer limit when you choose one');
 console.log('job age ok');
+
+// fake-job signs and personal addresses
+assert.match(L.scamSigns('Pay a registration fee of N5,000 to secure your interview slot'), /fee/);
+assert.match(L.scamSigns('Send your CV and contact us via WhatsApp only'), /chat-app/);
+assert.match(L.scamSigns('Earn up to $500 daily from home'), /earn/);
+assert.equal(L.scamSigns('Executive Assistant. Remote. Competitive salary paid monthly in USD.'), '');
+assert.equal(L.personalEmail('hr.company@gmail.com'), true);
+assert.equal(L.personalEmail('careers@paystack.com'), false);
+console.log('scam guard ok');

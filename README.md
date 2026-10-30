@@ -4,8 +4,8 @@ A free job-application system that lives in a Google Sheet. It is built for a re
 **every job it lists must hire someone who lives and works from Nigeria.**
 
 - **The Google Sheet** (`sheet-app/`) is the interface. It:
-  - searches remote job boards (Remotive, Himalayas, Jobicy, Remote OK, We Work Remotely, Working Nomads, Arbeitnow) and the
-    Greenhouse, Lever and Ashby job boards of about 360 companies: remote-first companies that hire worldwide, and
+  - searches remote job boards (Remotive, Himalayas, Jobicy, Remote OK, We Work Remotely, Working Nomads, Arbeitnow, and Nigerian boards' RSS feeds) and the
+    Greenhouse, Lever, Ashby and Workable job pages of about 360 companies: remote-first companies that hire worldwide, and
     companies based in the US, UK, Canada, Germany, Spain, Australia and Nigeria;
   - keeps only remote jobs open to Nigeria (worldwide, Africa, Nigeria). It drops US/UK/EU-only, "authorized to work in
     the US", W-2, on-site and hybrid jobs. When a posting is unclear, Gemini reads it and must quote the words that
