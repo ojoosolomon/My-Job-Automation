@@ -47,7 +47,7 @@ const profile = sheet([['Field', 'Value'], ['cv_text', 'Executive assistant. Cal
   ['target_titles', 'Executive Assistant\nVirtual Assistant\nOperations Coordinator\nCustomer Service Representative']]);
 const log = sheet([['Time', 'Event', 'Details']]), apps = sheet([['App ID', 'Job ID', 'Employer', 'Title', 'Job URL', 'Status', 'Result']]);
 const removed = sheet([['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason']]);
-const store = { MIN_FIT: '0', EMPLOYERS_SEARCHED: String(Date.now()) };
+const store = { MIN_FIT: '0', EMPLOYERS_SEARCHED: String(Date.now()), AUTO_ONLY: 'off' };
 const fetch = (url) => {
   const body = url === 'https://ngjobs.example/feed' ? rss : /widget\/accounts\/kudi\?/.test(url) ? JSON.stringify(workable) : pages[url];
   return { getResponseCode: () => body === undefined ? 404 : 200, getHeaders: () => ({}), getContentText: () => body || '' };
@@ -77,4 +77,12 @@ assert(!got.some(x => /II$/.test(x.t)), 'office-based Workable job not listed');
 assert(!got.some(x => x.e === 'Quick Cash Ventures'), 'a job asking for a fee is skipped');
 assert(log.rows.some(r => r[1] === 'POSSIBLE_SCAM_SKIPPED'));
 assert.equal(got.length, 3);
+// auto-only mode (the default): only jobs the applier can send by itself are listed; the Gmail-address job is not
+jobs.rows.splice(1);
+removed.rows.splice(1);
+store.AUTO_ONLY = 'on';
+api.findJobs();
+const auto = jobs.rows.slice(1).map(r => r[col('Employer')]).sort();
+assert.deepEqual(auto, ['Acme Nigeria Limited', 'Kudi Co'], JSON.stringify(auto));
+assert(/not automatically appliable \(auto-only mode\): 1/.test(log.rows.filter(r => r[1] === 'FIND_JOBS').pop()[2]));
 console.log('Nigerian sources tests passed');

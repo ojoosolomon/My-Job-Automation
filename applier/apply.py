@@ -72,7 +72,7 @@ def norm(s: str) -> str:
 ALLOWED_SUFFIXES = ALLOWED_SUFFIXES + ("smartrecruiters.com", "teamtailor.com", "personio.de", "personio.com", "pinpointhq.com",
                                       "rippling.com", "dover.com", "zohorecruit.com", "zohorecruit.eu", "careers-page.com", "freshteam.com",
                                       "homerun.co", "polymer.co", "comeet.com", "hirehive.com", "jobscore.com", "applicantpro.com",
-                                      "recruitcrm.io", "gohire.io", "jobvite.com", "workable.com", "ashbyhq.com", "lever.co", "greenhouse.io")
+                                      "recruitcrm.io", "gohire.io", "jobvite.com", "workable.com", "ashbyhq.com", "lever.co", "greenhouse.io", "comeet.co")
 # Sites that need an account and login: never filled in (the applier hands these to you).
 LOGIN_HOSTS = re.compile(r"(myworkdayjobs|workday|icims|taleo|successfactors|oraclecloud|linkedin|indeed|glassdoor|wellfound|angel\.co|"
                          r"ultipro|ukg|paylocity|adp\.com|brassring|avature|phenompeople|ziprecruiter|upwork|fiverr|freelancer\.com)", re.I)

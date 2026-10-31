@@ -9,7 +9,7 @@
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-31b';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-10-31c';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
 var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back
@@ -25,10 +25,19 @@ var DECISIONS = ['PENDING', 'APPROVE', 'AUTO-APPROVED', 'APPLIED MYSELF', 'REVIS
 function passed_(f) { return /^PASS/.test(String(f || '')); }  // PASS, or PASS (approved by your)
 function approved_(d) { return d === 'APPROVE' || d === 'AUTO-APPROVED'; }
 // Application sites the applier fills by itself (no account needed). Workday, iCIMS, Taleo etc. need an account: you apply.
-var AUTO_ATS = ['greenhouse', 'lever', 'ashby', 'workable', 'bamboohr', 'jazzhr', 'breezy', 'recruitee'];
-var ATS_PREFERENCE = { greenhouse: 1, email: 1, ashby: 1, workable: 1, bamboohr: 1, jazzhr: 1, breezy: 1, recruitee: 1, lever: 2 };
+var AUTO_ATS = ['greenhouse', 'lever', 'ashby', 'workable', 'bamboohr', 'jazzhr', 'breezy', 'recruitee', 'smartrecruiters', 'teamtailor',
+  'personio', 'pinpoint', 'rippling', 'dover', 'zohorecruit', 'jobvite', 'manatal', 'freshteam', 'homerun', 'polymer', 'comeet'];
+var ATS_PREFERENCE = { greenhouse: 1, email: 1, ashby: 1, workable: 1, bamboohr: 1, jazzhr: 1, breezy: 1, recruitee: 1, lever: 2,
+  smartrecruiters: 2, teamtailor: 2, personio: 2, pinpoint: 2, rippling: 2, dover: 2, zohorecruit: 2, jobvite: 2, manatal: 2,
+  freshteam: 2, homerun: 2, polymer: 2, comeet: 2 };
 var ATS_HOSTS = [[/greenhouse\.io/, 'greenhouse'], [/jobs\.lever\.co/, 'lever'], [/ashbyhq\.com/, 'ashby'], [/workable\.com/, 'workable'],
-  [/bamboohr\.com/, 'bamboohr'], [/applytojob\.com/, 'jazzhr'], [/breezy\.hr/, 'breezy'], [/recruitee\.com/, 'recruitee']];
+  [/bamboohr\.com/, 'bamboohr'], [/applytojob\.com/, 'jazzhr'], [/breezy\.hr/, 'breezy'], [/recruitee\.com/, 'recruitee'],
+  [/smartrecruiters\.com/, 'smartrecruiters'], [/teamtailor\.com/, 'teamtailor'], [/personio\.(de|com)/, 'personio'],
+  [/pinpointhq\.com/, 'pinpoint'], [/ats\.rippling\.com/, 'rippling'], [/app\.dover\.com/, 'dover'], [/zohorecruit\.(com|eu)/, 'zohorecruit'],
+  [/jobs\.jobvite\.com/, 'jobvite'], [/careers-page\.com/, 'manatal'], [/freshteam\.com/, 'freshteam'], [/homerun\.co/, 'homerun'],
+  [/polymer\.co/, 'polymer'], [/comeet\.(com|co)/, 'comeet']];
+/** Auto-only mode (on by default): only jobs the applier can send by itself are listed, prepared and applied to. */
+function autoOk_(ats, url) { return ats === 'email' || (AUTO_ATS.indexOf(ats) >= 0 && canTry_(ats, url)); }
 // Sites that need an account and login: never filled in automatically (you apply there yourself).
 var LOGIN_HOSTS = /(myworkdayjobs|workday|icims|taleo|successfactors|oraclecloud|linkedin|indeed|glassdoor|wellfound|angel\.co|ultipro|ukg|paylocity|adp\.com|brassring|avature|phenompeople|jobvite\.com\/[^\/]+\/login|ziprecruiter|upwork|fiverr|freelancer\.com)/i;
 /**
@@ -72,6 +81,7 @@ function onOpen() {
     .addItem('Auto-apply: turn on / off', 'toggleAutoApply')
     .addItem('Set daily auto-apply target', 'setDailyLimit')
     .addItem('Set daily apply-yourself target', 'setManualLimit')
+    .addItem('Auto-only mode: turn on / off', 'toggleAutoOnly')
     .addItem('Set minimum fit %', 'setMinFit')
     .addItem('Set maximum job age (hours)', 'setMaxAge')
     .addItem('Send today\'s summary email now', 'dailySummary')
@@ -603,6 +613,7 @@ var JUNK_HOSTS = /^https?:\/\/([^\/]*\.)?(google|googleapis|gstatic|facebook|twi
  */
 function recheckListed_(seconds) {
   var start = Date.now(), p = profile_(), jobs = table_(TAB.JOBS), apps = table_(TAB.APPS), checks = 0, fixed = 0, dropped = 0;
+  var autoOnlyNow = settings_().autoOnly;
   var appOf = {};
   apps.rows.forEach(function (r, i) { appOf[r[apps.col['Job ID']]] = { row: i + 2, r: r }; });
   var sent = SENT_STATUSES.concat(['SUBMITTED', 'SUBMITTING']);
@@ -617,6 +628,8 @@ function recheckListed_(seconds) {
       if (app) setCells_(apps, app.row, { 'Status': 'SKIPPED', 'Result': reason.slice(0, 200), 'Updated': new Date() });
       dropped++;
     };
+    if (st === 'NEW' && autoOnlyNow && !autoOk_(String(r[jobs.col['ATS']]), String(r[jobs.col['Apply URL']])) &&
+        !BOARD_HOSTS.test(String(r[jobs.col['Apply URL']]))) return skip('Not on a site the applier can fill by itself (auto-only mode)');
     if (matchTitle(title, p.titles).match === 'none' && !/added by hand/.test(r[jobs.col['Title match']])) return skip('Title is not one of your target roles');
     if (!/^Checked:|added by hand/.test(why)) {
       var o = openToNigeria(r[jobs.col['Location']], r[jobs.col['Description']], '', title);
@@ -811,7 +824,7 @@ function findJobs() {
   var companies = [];
   ct.rows.forEach(function (r, i) { if (r[0] && r[1] && r[2] && !/^not found/.test(r[4])) companies.push({ r: r, row: i + 2 }); });
   var added = 0, matched = 0, already = 0, lowFit = 0, elsewhere = 0, lowPay = 0, errors = [], minFit = settings_().minFit;
-  var start = t0, resolved = 0, notOpen = {}, tooOld = 0, scams = 0, maxAge = settings_().maxAge;
+  var start = t0, resolved = 0, notOpen = {}, tooOld = 0, scams = 0, maxAge = settings_().maxAge, notAuto = 0, autoOnly = settings_().autoOnly;
   jobs.rows.forEach(function (r) { seen[seenKey_(r[jobs.col['Employer']], r[jobs.col['Title']])] = true; });
   // the job boards are searched in turn: a run that hits the time limit carries on from there next time
   var off = Number(props.getProperty('FIND_OFFSET') || 0) % Math.max(1, companies.length), skipped = 0;
@@ -851,8 +864,9 @@ function findJobs() {
       if (seen[j.url] || seen[key]) { already++; return; }  // the same job is often on several boards
       seen[j.url] = seen[key] = true;
       var where = { apply: j.apply, ats: feed ? 'other' : ats, board: feed ? '' : board };
-      if (feed && Date.now() - start < 280e3 && resolved < 40) { where = resolveApply_(j.apply || j.url, j.text); resolved++; }
+      if (feed && Date.now() - start < 290e3 && resolved < 70) { where = resolveApply_(j.apply || j.url, j.text); resolved++; }
       else if (feed) where = { apply: j.apply || j.url, ats: atsOfUrl_(j.apply || j.url), board: '' };
+      if (autoOnly && !autoOk_(where.ats, where.apply)) { notAuto++; return; }  // not on a site the applier can fill: not listed
       if (where.ats === 'email' || where.ats === 'email-special') seen[where.apply] = true;
       jobRow_(jobs, ['J-' + hashOf_(j.url).slice(0, 10), new Date(), employer, j.title, j.location || '', open.ok,
         tm.match + ': ' + tm.target, where.ats, where.board, j.url, where.apply, 'NEW', String(j.text || '').slice(0, 40000)], score,
@@ -868,7 +882,7 @@ function findJobs() {
     ', already in Jobs ' + already + '); below ' + minFit + '% not listed: ' + lowFit + '; not open to Nigeria: ' + elsewhere +
     (elsewhere ? ' (' + Object.keys(notOpen).map(function (k) { return k + ' ' + notOpen[k]; }).join(', ') + ')' : '') +
     '; salary below ' + (p.salaryMin || '-') + ': ' + lowPay + '; posted more than ' + maxAge + ' h ago or no date: ' + tooOld +
-    '; possible scams skipped: ' + scams +
+    '; possible scams skipped: ' + scams + (autoOnly ? '; not automatically appliable (auto-only mode): ' + notAuto : '') +
     (errors.length ? '; sources with problems: ' + errors.join('; ') : ''));
   return added;
 }
@@ -1305,7 +1319,8 @@ function settings_() {
   var props = PropertiesService.getScriptProperties();
   return { auto: props.getProperty('AUTO_APPLY') !== 'off', limit: Number(props.getProperty('DAILY_LIMIT') || 8),
     minFit: Number(props.getProperty('MIN_FIT') || 60), maxAge: Number(props.getProperty('MAX_AGE_HOURS') || 24),
-    manual: Number(props.getProperty('MANUAL_LIMIT') || 4) };  // limit: sent automatically a day; manual: prepared for you a day
+    autoOnly: props.getProperty('AUTO_ONLY') !== 'off',
+    manual: props.getProperty('AUTO_ONLY') !== 'off' ? 0 : Number(props.getProperty('MANUAL_LIMIT') || 4) };  // limit: sent automatically a day; manual: prepared for you a day
 }
 
 function sameDay_(a, b) {
@@ -1327,6 +1342,7 @@ function autoToday_() {
 function tierOf_(ats, leverOff, url) {
   if (ats === 'lever') return leverOff ? 3 : 2;
   if (ATS_PREFERENCE[ats] === 1) return 1;
+  if (ATS_PREFERENCE[ats] === 2) return 2;
   return ats === 'other' && canTry_(ats, url) ? 2 : 3;  // an employer careers page without login: tried after the known sites
 }
 
@@ -1621,6 +1637,16 @@ function setDailyLimit() {
   PropertiesService.getScriptProperties().setProperty('DAILY_LIMIT', String(n));
   log_('DAILY_LIMIT', n);
   ui.alert('Up to ' + n + ' applications a day are sent automatically.');
+}
+
+function toggleAutoOnly() {
+  var ui = SpreadsheetApp.getUi(), props = PropertiesService.getScriptProperties(), on = settings_().autoOnly;
+  if (ui.alert('Auto-only mode is ' + (on ? 'ON' : 'OFF'), on ? 'Turn it OFF? Jobs on employer career sites, Workday and similar ' +
+    'will be listed too and prepared for you to send yourself.' : 'Turn it ON? Only jobs the applier can send by itself are listed and ' +
+    'prepared.', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
+  props.setProperty('AUTO_ONLY', on ? 'off' : 'on');
+  log_('AUTO_ONLY', on ? 'OFF' : 'ON');
+  ui.alert('Auto-only mode is now ' + (on ? 'OFF.' : 'ON. Run "Find jobs now" to refresh the Jobs tab.'));
 }
 
 function setManualLimit() {

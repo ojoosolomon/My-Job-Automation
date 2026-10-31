@@ -13,7 +13,7 @@ const APP = ['App ID', 'Job ID', 'Employer', 'Title', 'Job URL', 'Resume PDF', '
 const apps = sheet([APP]);
 const profile = sheet([['Field', 'Value'], ['cv_text', 'cv'], ['target_titles', 'x']]);
 const log = sheet([['Time', 'Event', 'Details']]);
-const store = {};
+const store = { AUTO_ONLY: 'off', };
 const removedRows = [['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason']];
 const removed = { rows: removedRows, getLastRow: () => removedRows.length, getLastColumn: () => 6, isSheetHidden: () => true, hideSheet() {},
   getDataRange: () => ({ getValues: () => removedRows.map(x => x.slice()) }),
