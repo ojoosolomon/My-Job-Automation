@@ -65,3 +65,18 @@ def test_employer_sites_without_login_are_tried():
     assert not apply.allowed("https://other.com/x")
     assert not apply.allowed("https://acme.wd1.myworkdayjobs.com/en-US/careers/job/1"), "login sites are never filled in"
     apply.SITE.clear()
+
+
+def test_no_experience_matches_differently_worded_choices():
+    opts = ["Select...", "Expert: I have managed macOS fleets", "Some: occasional support", "None: I have not supported macOS"]
+    assert apply.pick_option(opts, "no experience") == 3
+    assert apply.pick_option(["Please select", "0 years", "1-2 years", "3+ years"], "None") == 1
+    assert apply.pick_option(["Yes", "No"], "no experience") == 1
+    assert apply.pick_option(["Advanced", "Intermediate"], "no experience") is None, "never picks a choice that is not true"
+
+
+def test_alternate_addresses():
+    alt = apply.alternate_urls({"apply_url": "https://boards.greenhouse.io/embed/job_app?for=acme&token=123",
+                                "job_url": "https://acme.com/careers/123"}, "https://boards.greenhouse.io/embed/job_app?for=acme&token=123")
+    assert alt == ["https://job-boards.greenhouse.io/acme/jobs/123", "https://boards.greenhouse.io/acme/jobs/123", "https://acme.com/careers/123"]
+    assert apply.alternate_urls({"apply_url": "https://jobs.lever.co/acme/1111-2222/apply"}, "x") == ["https://jobs.lever.co/acme/1111-2222"]

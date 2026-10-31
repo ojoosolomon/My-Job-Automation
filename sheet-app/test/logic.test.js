@@ -195,3 +195,11 @@ assert.equal(L.scamSigns('Executive Assistant. Remote. Competitive salary paid m
 assert.equal(L.personalEmail('hr.company@gmail.com'), true);
 assert.equal(L.personalEmail('careers@paystack.com'), false);
 console.log('scam guard ok');
+
+// a "No" answer to a choice question picks the choice that means none, never a false one
+const mq = [{ question: 'Experience supporting macOS?', options: ['Expert', 'Some', 'None: I have not supported macOS'] },
+  { question: 'Level?', options: ['Advanced', 'Intermediate'] }];
+assert.deepEqual(L.verifyAnswers([{ question: mq[0].question, kind: 'fact', answer: 'no experience', evidence: '' },
+  { question: mq[1].question, kind: 'fact', answer: 'no experience', evidence: '' }], mq, 'cv'),
+  { 'Experience supporting macOS?': 'None: I have not supported macOS' });
+console.log('none-choice ok');

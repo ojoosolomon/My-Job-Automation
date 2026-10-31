@@ -9,7 +9,7 @@
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-31a';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-10-31b';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
 var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back
@@ -1319,7 +1319,7 @@ function autoToday_() {
   return apps.rows.filter(function (r) {
     var t = r[apps.col['Decision time']];
     return r[apps.col['Decision']] === 'AUTO-APPROVED' && t && sameDay_(t, now) &&
-      ['NEEDS YOU', 'NOT SENT', 'EXPIRED', 'NEEDS YOUR CHECK'].indexOf(r[apps.col['Status']]) < 0;
+      ['NEEDS YOU', 'NOT SENT', 'EXPIRED', 'NEEDS YOUR CHECK', 'SKIPPED'].indexOf(r[apps.col['Status']]) < 0;
   }).length;
 }
 
@@ -2051,7 +2051,7 @@ function doPost(e) {
         today: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MM/dd/yyyy'),
         hourly: p.hourly_rate || (p.salaryMin ? '$' + Math.round(p.salaryMin / 2080) + (p.salaryMax ? ' - $' + Math.round(p.salaryMax / 2080) : '') + ' per hour' : ''),
         salary_ngn: p.salary_ngn || '', phone: p.phone || '' });
-      return json_({ ok: true, apply_url: jr[jobs.col['Apply URL']], ats: jr[jobs.col['ATS']], board: jr[jobs.col['Board']],
+      return json_({ ok: true, apply_url: jr[jobs.col['Apply URL']], job_url: jr[jobs.col['Job URL']], ats: jr[jobs.col['ATS']], board: jr[jobs.col['Board']],
         resume_pdf: Utilities.base64Encode(resume.getBlob().getBytes()), cover_pdf: Utilities.base64Encode(cover.getBlob().getBytes()),
         identity: { full_name: p.full_name.split(',')[0], first_name: p.first_name, last_name: p.last_name, email: p.email,
           phone: p.phone, location: f.location, linkedin: p.linkedin, current_company: p.current_company, current_title: p.current_title,
@@ -2079,8 +2079,12 @@ function doPost(e) {
     }
     if (req.action === 'result') {
       if (r[apps.col['Status']] !== 'SUBMITTING') return json_({ ok: false, reason: 'not in SUBMITTING state' });
-      var map = { SUBMITTED: 'SUBMITTED', NEEDS_YOU: 'NEEDS YOU', UNCERTAIN: 'UNCERTAIN', NOT_SENT: 'NOT SENT' };
+      var map = { SUBMITTED: 'SUBMITTED', NEEDS_YOU: 'NEEDS YOU', UNCERTAIN: 'UNCERTAIN', NOT_SENT: 'NOT SENT', CLOSED: 'SKIPPED' };
       var upd = { 'Status': map[req.outcome] || 'UNCERTAIN', 'Result': String(req.detail || '').slice(0, 500), 'Updated': new Date() };
+      if (req.outcome === 'CLOSED') {  // the job was taken down: removed (the daily slot is freed), never sent to you
+        var jt = table_(TAB.JOBS), jrow2 = findRow_(jt, 'Job ID', r[apps.col['Job ID']]);
+        if (jrow2 > 0) setCells_(jt, jrow2, { 'Status': 'SKIPPED — job closed by the employer' });
+      }
       if (req.outcome === 'NOT_SENT') upd['Decision'] = 'PENDING'; // approval used; you must approve again
       var link = saveEvidence_(r, apps, req.evidence || []);
       if (link) upd['Evidence'] = link;

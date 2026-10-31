@@ -414,14 +414,19 @@ function verifyAnswers(items, questions, sourceText) {
     var q = (questions || []).filter(function (x) { return x.question === it.question; })[0];
     var ans = String(it.answer == null ? '' : it.answer).trim();
     if (!q || !ans || it.kind === 'preference') return;
-    var opts = q.options || [];
+    var opts = q.options || [], saidNo = /^(no|none|never|not|0|zero)\b/.test(plain_(ans));
     if (opts.length) {
       var hit = opts.filter(function (o) { return plain_(o) === plain_(ans); })[0] ||
         opts.filter(function (o) { return plain_(o).indexOf(plain_(ans)) === 0 && plain_(ans).length >= 2; })[0];
+      if (!hit && /^(no|none|never|not|0|zero)\b/.test(plain_(ans))) {  // "No experience" against "None" / "I have not..." choices
+        var none = opts.filter(function (o) { return /\b(no|none|never|not|0|zero|beginner|limited|minimal|less than)\b/.test(plain_(o)) &&
+          !/decline|prefer not/.test(plain_(o)); });
+        hit = none.filter(function (o) { return /\b(none|no experience|never|0|zero)\b/.test(plain_(o)); })[0] || none[0];
+      }
       if (!hit) return;
       ans = hit;
     }
-    var isNo = /^(no|false|n)\b/i.test(plain_(ans)) || /^no[ ,]/i.test(ans) || /^(0|none|zero)( years?)?$/i.test(plain_(ans));
+    var isNo = saidNo || /^(no|false|n)\b/i.test(plain_(ans)) || /^no[ ,]/i.test(ans) || /^(0|none|zero)( years?)?$/i.test(plain_(ans));
     if (isNo) { if (it.kind === 'fact') out[q.question] = ans; return; }  // "No" / "0 years" for what your CV doesn't show
     var ev = plain_(it.evidence);
     if (ev.length < 4 || src.indexOf(ev) < 0) return;

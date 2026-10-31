@@ -94,6 +94,22 @@ def allowed(url: str) -> bool:
             or any(host == d or host.endswith("." + d) for d in SITE))
 
 
+def alternate_urls(job: dict, tried: str) -> list:
+    """Other addresses for the same application: the job posting itself, and each site's other form address."""
+    out, url = [], job.get("apply_url") or ""
+    gh = re.search(r"greenhouse\.io/(?:embed/job_app\?for=)?([^/?&#]+)(?:/jobs/|&token=)(\d+)", url) or \
+        re.search(r"for=([^&]+)&token=(\d+)", url)
+    if gh:
+        out += [f"https://job-boards.greenhouse.io/{gh.group(1)}/jobs/{gh.group(2)}", f"https://boards.greenhouse.io/{gh.group(1)}/jobs/{gh.group(2)}"]
+    if re.search(r"jobs\.lever\.co/.+/apply$", url):
+        out.append(url[:-len("/apply")])
+    if re.search(r"jobs\.ashbyhq\.com/.+/application$", url):
+        out.append(url[:-len("/application")])
+    if job.get("job_url"):
+        out.append(job["job_url"])
+    return [u for i, u in enumerate(out) if u and u != tried and u not in out[:i]]
+
+
 def application_url(job: dict) -> str:
     """Greenhouse jobs often list the employer's own careers page; every Greenhouse job also has a hosted form."""
     url = job["apply_url"]
@@ -174,6 +190,12 @@ def pick_option(options: list[str], value) -> int | None:
         for i, o in real:
             if v in norm(o):
                 return i
+    # "No experience" / "None" against choices worded differently ("I have not used it", "0 years", "No prior experience")
+    if re.match(r"^(no|none|never|not|0|zero|n/?a)\b", v):
+        none = [i for i, o in real if re.search(r"\b(no|none|never|not|0|zero|n/?a|beginner|limited|minimal|less than)\b", norm(o))
+                and not DECLINE.search(o)]
+        if none:
+            return min(none, key=lambda i: (0 if re.search(r"\b(none|no experience|never|0|zero)\b", norm(options[i])) else 1, i))
     return None
 
 
@@ -821,7 +843,14 @@ def submit(job: dict, files: dict, evidence: Path, timeout_s: float = 60, headle
             page.set_default_timeout(15000)
             page.route("**/*", lambda r: r.abort() if r.request.is_navigation_request() and not allowed(r.request.url) else r.continue_())
             resp = page.goto(url, timeout=30000, wait_until="domcontentloaded")
+            # the application address can change (or be built wrongly): try the job posting and the site's other form addresses
+            for alt in [u for u in alternate_urls(job, url) if allowed(u)]:
+                if resp is not None and resp.status < 400:
+                    break
+                resp = page.goto(alt, timeout=30000, wait_until="domcontentloaded")
             if resp is None or resp.status >= 400:
+                if resp is not None and resp.status in (404, 410):
+                    return "CLOSED", "The job is no longer online (page not found): the employer has closed it."
                 return "NEEDS_YOU", f"The application page did not open (HTTP {resp.status if resp else '?'})."
             page.wait_for_timeout(1500)
             scope = open_form(page)  # waits for the form; follows an "Apply" button or an embedded form if needed
