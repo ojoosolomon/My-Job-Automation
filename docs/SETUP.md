@@ -139,6 +139,14 @@ every search and every prepare run. They are listed in a hidden **Removed jobs**
 it: right-click any tab name → **Show sheet** → Removed jobs). To delete them straight away: **Job Board → Remove skipped /
 out-of-scope jobs now**. Jobs that already have a real application are never deleted.
 
+**What the applier fills in by itself:** Greenhouse, Lever, Ashby, Workable, BambooHR, JazzHR, Breezy, Recruitee,
+SmartRecruiters, Teamtailor, Personio, Pinpoint, Rippling, Dover, Zoho Recruit, Jobvite and others, and **any employer
+careers page that needs no account**. It stops (and the job comes to you) on a login, a CAPTCHA, or a question it cannot
+answer truthfully. Sites that always need an account (Workday, iCIMS, Taleo, SuccessFactors, LinkedIn, Indeed) come
+straight to you. Written questions ("Describe your experience with...") are answered from your Source of Truth, and an
+independent check must find every claim in your CV before the answer is used. When something isn't in your CV, the
+answer says so honestly and gives your closest real experience.
+
 **Statuses in the Applications tab:**
 
 | Status | Meaning |

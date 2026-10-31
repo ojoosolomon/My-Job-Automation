@@ -52,3 +52,16 @@ def test_us_profile_still_works():
     us = {"identity": {"country": "United States", "timezone": "Eastern"}, "answers": {"work_authorized_us": "Yes"}}
     assert apply.value_for("Are you legally authorized to work in the United States?", us) == ("text", ["Yes"])
     assert apply.value_for("Time zone", us)[1][0] == "Eastern"
+
+
+def test_employer_sites_without_login_are_tried():
+    apply.SITE.clear()
+    assert apply.site_domain("https://careers.acme.com/jobs/12") == "acme.com"
+    assert apply.site_domain("https://jobs.acme.com.ng/apply") == "acme.com.ng"
+    assert apply.allowed("https://acme.teamtailor.com/jobs/1/applications/new")
+    assert not apply.allowed("https://careers.acme.com/jobs/12"), "an unknown site only for the application being sent"
+    apply.SITE.append("acme.com")
+    assert apply.allowed("https://careers.acme.com/jobs/12") and apply.allowed("https://acme.com/apply")
+    assert not apply.allowed("https://other.com/x")
+    assert not apply.allowed("https://acme.wd1.myworkdayjobs.com/en-US/careers/job/1"), "login sites are never filled in"
+    apply.SITE.clear()

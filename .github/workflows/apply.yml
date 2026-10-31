@@ -4,7 +4,7 @@
 name: Job Board applier
 on:
   schedule:
-    - cron: "17 */3 * * *"  # backup only: the Sheet starts the applier instantly when something is queued
+    - cron: "17 * * * *"  # every hour as a backup: the Sheet starts the applier instantly when GitHub is connected
   workflow_dispatch: {}
 concurrency:
   group: jjboard-applier   # never two runs at once

@@ -68,9 +68,30 @@ def norm(s: str) -> str:
     return re.sub(r"(\s*([*✱＊]|\(required\)))+$", "", s).strip()
 
 
+# More application sites that need no account (each employer has its own address on them).
+ALLOWED_SUFFIXES = ALLOWED_SUFFIXES + ("smartrecruiters.com", "teamtailor.com", "personio.de", "personio.com", "pinpointhq.com",
+                                      "rippling.com", "dover.com", "zohorecruit.com", "zohorecruit.eu", "careers-page.com", "freshteam.com",
+                                      "homerun.co", "polymer.co", "comeet.com", "hirehive.com", "jobscore.com", "applicantpro.com",
+                                      "recruitcrm.io", "gohire.io", "jobvite.com", "workable.com", "ashbyhq.com", "lever.co", "greenhouse.io")
+# Sites that need an account and login: never filled in (the applier hands these to you).
+LOGIN_HOSTS = re.compile(r"(myworkdayjobs|workday|icims|taleo|successfactors|oraclecloud|linkedin|indeed|glassdoor|wellfound|angel\.co|"
+                         r"ultipro|ukg|paylocity|adp\.com|brassring|avature|phenompeople|ziprecruiter|upwork|fiverr|freelancer\.com)", re.I)
+SITE = []  # the employer's own careers site for the application being sent (its domain and sub-domains are allowed)
+
+
+def site_domain(url: str) -> str:
+    """example.com for jobs.example.com; example.com.ng for careers.example.com.ng."""
+    parts = (urlsplit(url).hostname or "").split(".")
+    n = 3 if len(parts) >= 3 and parts[-2] in ("co", "com", "org", "net", "gov", "ac", "edu") and len(parts[-1]) == 2 else 2
+    return ".".join(parts[-n:])
+
+
 def allowed(url: str) -> bool:
     host = urlsplit(url).hostname or ""
-    return host in ALLOWED_HOSTS or any(host.endswith("." + s) for s in ALLOWED_SUFFIXES)
+    if LOGIN_HOSTS.search(host):
+        return False
+    return (host in ALLOWED_HOSTS or any(host == s or host.endswith("." + s) for s in ALLOWED_SUFFIXES)
+            or any(host == d or host.endswith("." + d) for d in SITE))
 
 
 def application_url(job: dict) -> str:
@@ -753,6 +774,14 @@ def open_form(page) -> str:
             continue
         apply = page.locator("a, button").filter(has_text=APPLY_BUTTON).filter(visible=True)
         if apply.count():
+            href = apply.first.get_attribute("href") or ""
+            if href.startswith("http") and allowed(href):  # an Apply link that would open a new tab: open it here
+                try:
+                    page.goto(href, wait_until="domcontentloaded")
+                    page.wait_for_timeout(2000)
+                except PwTimeout:
+                    return ""
+                continue
             try:
                 apply.first.click(timeout=10000)
                 page.wait_for_load_state("domcontentloaded")
@@ -777,6 +806,9 @@ def submit(job: dict, files: dict, evidence: Path, timeout_s: float = 60, headle
     from playwright.sync_api import sync_playwright
 
     url = application_url(job)
+    SITE.clear()
+    if job.get("ats") == "other" and url.startswith("https://") and not LOGIN_HOSTS.search(url):
+        SITE.append(site_domain(url))  # the employer's own careers page: try it (it stops on a login or CAPTCHA)
     if not allowed(url):
         return "NEEDS_YOU", "This site is not supported for automatic applying; please apply with the approved PDF."
     evidence.mkdir(parents=True, exist_ok=True)

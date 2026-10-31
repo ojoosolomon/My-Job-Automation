@@ -175,7 +175,7 @@ def test_applier_end_to_end(replica, monkeypatch, tmp_path):
     assert (ashby["auth"], ashby["sponsor"], ashby["resume"]) == ("Yes", "No", "<file Test_Person_Resume.pdf>"), ashby   # Yes/No buttons
     # the answer sheet lists every question and answer, and what still needs her
     assert "Country: United States" in sheet.sheets["A-gh2"], sheet.sheets["A-gh2"]
-    assert "Do you hold a current CPHQ certification?: (her answer needed)" in sheet.sheets["A-lever-q"], sheet.sheets["A-lever-q"]
+    assert "Do you hold a current CPHQ certification?: (your answer needed)" in sheet.sheets["A-lever-q"], sheet.sheets["A-lever-q"]
     assert "Do you hold a current CPHQ certification?" in sheet.asked
     assert last["fields"]["name"] == "Test Person" and last["fields"]["org"] == "Example Care", last
     assert last["fields"]["cards[c1][field0]"] == "Yes" and last["fields"]["cards[c1][field1]"] == "No", last

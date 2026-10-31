@@ -555,7 +555,7 @@ if (typeof module !== 'undefined') {
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-30d';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-10-31a';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
 var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back
@@ -575,6 +575,17 @@ var AUTO_ATS = ['greenhouse', 'lever', 'ashby', 'workable', 'bamboohr', 'jazzhr'
 var ATS_PREFERENCE = { greenhouse: 1, email: 1, ashby: 1, workable: 1, bamboohr: 1, jazzhr: 1, breezy: 1, recruitee: 1, lever: 2 };
 var ATS_HOSTS = [[/greenhouse\.io/, 'greenhouse'], [/jobs\.lever\.co/, 'lever'], [/ashbyhq\.com/, 'ashby'], [/workable\.com/, 'workable'],
   [/bamboohr\.com/, 'bamboohr'], [/applytojob\.com/, 'jazzhr'], [/breezy\.hr/, 'breezy'], [/recruitee\.com/, 'recruitee']];
+// Sites that need an account and login: never filled in automatically (you apply there yourself).
+var LOGIN_HOSTS = /(myworkdayjobs|workday|icims|taleo|successfactors|oraclecloud|linkedin|indeed|glassdoor|wellfound|angel\.co|ultipro|ukg|paylocity|adp\.com|brassring|avature|phenompeople|jobvite\.com\/[^\/]+\/login|ziprecruiter|upwork|fiverr|freelancer\.com)/i;
+/**
+ * Can the applier try this application by itself? The known application sites, and any employer careers page that needs
+ * no account (the applier stops on a login, a CAPTCHA, or a question it cannot answer truthfully).
+ */
+function canTry_(ats, url) {
+  if (AUTO_ATS.indexOf(ats) >= 0) return !(ats === 'lever' && leverBlocked_());
+  return ats === 'other' && /^https:\/\//.test(String(url)) && !LOGIN_HOSTS.test(String(url)) && !BOARD_HOSTS.test(String(url));
+}
+
 function atsOfUrl_(url) { for (var i = 0; i < ATS_HOSTS.length; i++) if (ATS_HOSTS[i][0].test(String(url))) return ATS_HOSTS[i][1]; return 'other'; }
 var APPROVAL_HOURS = 48;
 var PROFILE_FIELDS = ['full_name', 'first_name', 'last_name', 'email', 'phone', 'location', 'linkedin', 'portfolio',
@@ -1179,7 +1190,7 @@ function recheckListed_(seconds) {
       var cover = DriveApp.getFileById(fileId_(app.r[apps.col['Cover letter PDF']])).getBlob();
       upd['Package hash'] = bytesHash_([resume, cover], r[jobs.col['Job URL']] + '|' + res.apply);
     } catch (e) { return; }
-    if ((AUTO_ATS.indexOf(res.ats) >= 0 || res.ats === 'email') && passed_(app.r[apps.col['Fact check']])) {
+    if ((canTry_(res.ats, res.apply) || res.ats === 'email') && passed_(app.r[apps.col['Fact check']])) {
       upd['Status'] = 'READY FOR YOUR DECISION';
       upd['Decision'] = 'PENDING';
       upd['Result'] = 'Found the employer\'s application form (' + res.ats + '): it can now be sent automatically.';
@@ -1859,9 +1870,10 @@ function autoToday_() {
 }
 
 /** 1 = applies by itself and rarely fails, 2 = applies by itself but often blocked (Lever), 3 = you apply (account sites, special email). */
-function tierOf_(ats, leverOff) {
+function tierOf_(ats, leverOff, url) {
   if (ats === 'lever') return leverOff ? 3 : 2;
-  return ATS_PREFERENCE[ats] === 1 ? 1 : 3;
+  if (ATS_PREFERENCE[ats] === 1) return 1;
+  return ats === 'other' && canTry_(ats, url) ? 2 : 3;  // an employer careers page without login: tried after the known sites
 }
 
 /** Packages prepared today that you will have to send yourself (kept under 30% of the day's packages). */
@@ -1912,7 +1924,7 @@ function prepareNew() {
     var score = fitScore({ title: r[jobs.col['Title']], text: r[jobs.col['Description']], remote: where }, p.titles, p.cv_text);
     if (r[jobs.col['Fit score']] !== score) jobs.sheet.getRange(i + 2, jobs.col['Fit score'] + 1).setValue(score);
     cands.push({ id: r[jobs.col['Job ID']], employer: r[jobs.col['Employer']], score: score, row: i + 2, where: where,
-      tier: tierOf_(String(r[jobs.col['ATS']]), leverOff), job: { employer: r[jobs.col['Employer']], title: r[jobs.col['Title']],
+      tier: tierOf_(String(r[jobs.col['ATS']]), leverOff, r[jobs.col['Apply URL']]), job: { employer: r[jobs.col['Employer']], title: r[jobs.col['Title']],
         location: r[jobs.col['Location']], text: r[jobs.col['Description']] } });
   });
   // All are at the minimum fit or above. Sites that usually go through by themselves come first, then the best fit.
@@ -2012,7 +2024,8 @@ function autoApprove_(appId, score, s) {
     return;
   }
   var jobs = table_(TAB.JOBS);
-  var ats = jobs.rows[findRow_(jobs, 'Job ID', r[apps.col['Job ID']]) - 2][jobs.col['ATS']];
+  var jrow = jobs.rows[findRow_(jobs, 'Job ID', r[apps.col['Job ID']]) - 2];
+  var ats = jrow[jobs.col['ATS']], applyUrl = jrow[jobs.col['Apply URL']];
   var upd = { 'Decision': 'AUTO-APPROVED', 'Decision time': new Date(), 'Updated': new Date() };
   if (ats === 'email') {
     upd['Status'] = 'APPROVED — WILL EMAIL';
@@ -2020,7 +2033,7 @@ function autoApprove_(appId, score, s) {
     setCells_(apps, row, upd);
     history_(appId, 'AUTO-APPROVED (fit ' + score + ', fact check PASS) → sending by email');
     sendEmailApplication_(appId);
-  } else if (AUTO_ATS.indexOf(ats) >= 0 && !(ats === 'lever' && leverBlocked_())) {
+  } else if (canTry_(ats, applyUrl)) {
     upd['Status'] = 'APPROVED — WILL SUBMIT';
     upd['Result'] = 'Auto-applying: queued for the applier.';
     setCells_(apps, row, upd);
@@ -2089,7 +2102,7 @@ function retryStopped(silent) {
     if (['NEEDS YOU', 'NOT SENT', 'APPLY YOURSELF'].indexOf(st) < 0 || !passed_(r[apps.col['Fact check']])) return;
     if (String(r[apps.col['Decision']]) === 'APPLIED MYSELF') return;
     var jr = findRow_(jobs, 'Job ID', r[apps.col['Job ID']]), ats = jr > 0 ? jobs.rows[jr - 2][jobs.col['ATS']] : '';
-    if (AUTO_ATS.indexOf(ats) < 0 || (ats === 'lever' && leverBlocked_())) return;
+    if (!canTry_(ats, jr > 0 ? jobs.rows[jr - 2][jobs.col['Apply URL']] : '')) return;
     // stopped before sending, or handed over only because the site wasn't supported then (now it is)
     if (!/^Nothing was sent\. (Questions|The site requires)|still rejected|site rejected the form|Error before submitting|could not be clicked|Could not find the Submit|not supported for automatic|can.t be filled in automatically/.test(res)) return;
     setCells_(apps, i + 2, { 'Decision': 'AUTO-APPROVED', 'Decision time': new Date(), 'Status': 'APPROVED — WILL SUBMIT',
@@ -2412,11 +2425,12 @@ function onEditInstalled(e) {
         sendEmailApplication_(r[apps.col['App ID']]);
         return;
       }
-      upd['Status'] = AUTO_ATS.indexOf(ats) >= 0 ? 'APPROVED — WILL SUBMIT' : 'APPLY YOURSELF';
-      upd['Result'] = AUTO_ATS.indexOf(ats) >= 0 ? 'Queued for the applier (usually within a few minutes).' :
+      var tryIt = canTry_(ats, jobs.rows[findRow_(jobs, 'Job ID', r[apps.col['Job ID']]) - 2][jobs.col['Apply URL']]);
+      upd['Status'] = tryIt ? 'APPROVED — WILL SUBMIT' : 'APPLY YOURSELF';
+      upd['Result'] = tryIt ? 'Queued for the applier (usually within a few minutes).' :
         ats === 'email-special' ? 'This employer has special email instructions. Send it yourself from Gmail with the two PDFs attached.' :
         'This site is not supported for automatic applying. Open the Job URL and upload the Resume PDF.';
-      if (AUTO_ATS.indexOf(ats) >= 0) {
+      if (tryIt) {
         setCells_(apps, row, upd);
         history_(r[apps.col['App ID']], 'Your decision: APPROVE → applier ' + (triggerApplier_() ? 'started' : 'queued (runs within 15 minutes)'));
         return;
@@ -2648,18 +2662,55 @@ function cvAnswers_(questions) {
     'words from the SOURCE into evidence; if the SOURCE does not show it, answer "No" for yes/no questions, "0" for ' +
     '"how many years" questions, and "No" for "do you have experience with X? if yes, list them" questions, otherwise "". ' +
     'For preference questions answer "". If the question has choices, the answer must be exactly one of them. For written ' +
-    'answers use 1-3 sentences in first person built only from SOURCE facts, with the main supporting SOURCE words in evidence. ' +
-    'Never invent numbers, employers, titles, dates, tools or credentials.';
+    'answers use 2-4 sentences in first person built only from SOURCE facts, with the main supporting SOURCE words in evidence. ' +
+    'If the question asks about something the SOURCE does not show (e.g. "describe your experience with macOS"), answer ' +
+    'honestly: say plainly that it has not been a main part of the work so far, then give the closest real experience from ' +
+    'the SOURCE; never claim the missing experience. Never invent numbers, employers, titles, dates, tools or credentials.';
   var user = 'SOURCE:\n' + source + '\n\n---\nQUESTIONS (JSON):\n' + JSON.stringify(questions.map(function (q) {
     return { question: q.question, choices: q.options || [], type: q.type };
   }));
   try {
     var res = gemini_(system, user, ANSWERS_SCHEMA, true);
-    return verifyAnswers(res.answers || [], questions, source);
+    var ok = verifyAnswers(res.answers || [], questions, source);
+    return writtenAnswers_(res.answers || [], questions, source, ok);
   } catch (e) {
     log_('CV_ANSWERS_FAILED', e.message);
     return {};
   }
+}
+
+var WRITTEN_REVIEW_SCHEMA = { type: 'OBJECT', properties: { results: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+  question: S.STRING, supported: { type: 'BOOLEAN' }, unsupported: S.STRING }, required: ['question', 'supported', 'unsupported'] } } },
+  required: ['results'] };
+
+/**
+ * Written answers ("Describe your experience with...", "Why are you a good fit?") need not quote the CV word for word, but
+ * an independent check must find every claim in it supported by the SOURCE, and every number must appear there.
+ * Choice and yes/no questions still follow the strict rules in verifyAnswers.
+ */
+function writtenAnswers_(items, questions, source, accepted) {
+  var nums = {};
+  numbersIn(source).forEach(function (n) { nums[n] = true; });
+  var cands = (items || []).filter(function (it) {
+    var q = (questions || []).filter(function (x) { return x.question === it.question; })[0];
+    var a = String(it.answer || '').trim();
+    return q && !accepted[q.question] && it.kind !== 'preference' && !(q.options || []).length && a.length >= 25 && a.length <= 900 &&
+      (q.type === 'textarea' || /^(describe|tell|explain|how|why|what|please (describe|explain|share|tell)|share|briefly|give)/i.test(q.question)) &&
+      !numbersIn(a).some(function (n) { return !nums[n] && !nums[n.replace('%', '')]; });
+  });
+  if (!cands.length) return accepted;
+  try {
+    var r = gemini_('You are a strict fact-checker. For each ANSWER, decide whether every claim in it (skills, tools, ' +
+      'experience, results, employers, numbers) is supported by the SOURCE. Saying honestly that something is not part of ' +
+      'the experience is supported. supported = false if any claim is not in the SOURCE.',
+      'SOURCE:\n' + source + '\n\n---\nANSWERS (JSON):\n' + JSON.stringify(cands.map(function (c) { return { question: c.question, answer: c.answer }; })),
+      WRITTEN_REVIEW_SCHEMA, true);
+    (r.results || []).forEach(function (x) {
+      var c = cands.filter(function (y) { return y.question === x.question; })[0];
+      if (c && x.supported === true) accepted[c.question] = String(c.answer).trim();
+    });
+  } catch (e) { log_('WRITTEN_ANSWERS_FAILED', e.message); }
+  return accepted;
 }
 
 /** The approved cover letter's paragraphs (for "Why are you interested?" boxes): the Doc next to the cover letter PDF. */
