@@ -90,3 +90,7 @@ assert.equal(removed.rows.length, 2, 'and remembered in the hidden Removed jobs 
 api.findJobs();
 assert(!jobs.rows.some(r => r[col('Title')] === 'Executive Assistant II'), 'a removed job is not listed again');
 console.log('search rules tests passed');
+// employers the boards show hiring someone in Nigeria are remembered and their job pages looked up
+assert(JSON.parse(store.DISCOVERED_EMPLOYERS || '[]').includes('Globex'), store.DISCOVERED_EMPLOYERS);
+assert(!JSON.parse(store.DISCOVERED_EMPLOYERS || '[]').includes('Initech'), 'a USA-only employer is not');
+console.log('employer discovery from job boards ok');

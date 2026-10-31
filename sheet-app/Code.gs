@@ -560,7 +560,7 @@ if (typeof module !== 'undefined') {
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-31c';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-10-31d';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
 var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back
@@ -1289,7 +1289,34 @@ var CANDIDATE_EMPLOYERS = [
   'Hnry', 'Eucalyptus', 'Leonardo.Ai=leonardoai', 'Prospection', 'Instaclustr', 'Simple=simple|simplecommerce', 'Mable'];
 
 /** Changes when the employer list in the code changes, so new employers are looked up after an update. */
-function employersKey_() { return hashOf_('greenhouse,lever,ashby,workable|' + CANDIDATE_EMPLOYERS.join('|')).slice(0, 12); }
+function employersKey_() { return hashOf_('greenhouse,lever,ashby,workable|' + allEmployers_().join('|')).slice(0, 12); }
+
+/** The employer list in the code plus employers the job boards showed hiring worldwide or in Africa (found by the search). */
+function allEmployers_() {
+  var found = [];
+  try { found = JSON.parse(PropertiesService.getScriptProperties().getProperty('DISCOVERED_EMPLOYERS') || '[]'); } catch (e) { found = []; }
+  var have = {};
+  CANDIDATE_EMPLOYERS.forEach(function (n) { have[String(n).split('=')[0].toLowerCase()] = true; });
+  return CANDIDATE_EMPLOYERS.concat(found.filter(function (n) { return !have[String(n).toLowerCase()]; }));
+}
+
+/** Remembers employers seen hiring someone in Nigeria (worldwide/Africa/Nigeria jobs on the boards), newest last, at most 300. */
+function rememberEmployers_(names) {
+  if (!names.length) return 0;
+  var props = PropertiesService.getScriptProperties(), list = [];
+  try { list = JSON.parse(props.getProperty('DISCOVERED_EMPLOYERS') || '[]'); } catch (e) { list = []; }
+  var have = {}, n = 0;
+  list.forEach(function (x) { have[x.toLowerCase()] = true; });
+  names.forEach(function (x) {
+    x = String(x || '').replace(/[^\w&.' -]/g, '').trim().slice(0, 40);
+    if (x.length < 2 || have[x.toLowerCase()]) return;
+    have[x.toLowerCase()] = true; list.push(x); n++;
+  });
+  while (JSON.stringify(list).length > 8000) list.shift();  // a stored setting holds 9 KB
+  props.setProperty('DISCOVERED_EMPLOYERS', JSON.stringify(list));
+  if (n) log_('EMPLOYERS_DISCOVERED', n + ' new employer(s) hiring in Nigeria/Africa/worldwide; their job pages are looked up next: ' + names.slice(0, 30).join(', '));
+  return n;
+}
 
 function boardGuesses_(name) {
   var known = String(name).split('=')[1];
@@ -1309,15 +1336,17 @@ function findEmployers() {
 /** Checks candidate employers for up to `seconds`; continues where it stopped on the next run. */
 function findEmployers_(seconds) {
   var start = Date.now(), props = PropertiesService.getScriptProperties();
-  var checked = JSON.parse(props.getProperty('EMPLOYERS_CHECKED') || '[]');
+  var checked = JSON.parse(props.getProperty('EMPLOYERS_CHECKED') || '[]');  // short IDs of employers already looked up
+  var idOf = function (name) { return hashOf_(String(name).toLowerCase()).slice(0, 6); };
   ensureColumns_(TAB.COMPANIES, COMPANY_COLS);
   var ct = table_(TAB.COMPANIES);
   var have = {};
   ct.rows.forEach(function (r) { have[String(r[0]).toLowerCase()] = true; have[r[1] + ':' + r[2]] = true; });
   var tries = [];
-  CANDIDATE_EMPLOYERS.forEach(function (name) {
+  var everyone = allEmployers_();
+  everyone.forEach(function (name) {
     var display = String(name).split('=')[0];
-    if (have[display.toLowerCase()] || checked.indexOf(display) >= 0) return;
+    if (have[display.toLowerCase()] || checked.indexOf(idOf(display)) >= 0) return;
     boardGuesses_(name).forEach(function (b) {
       tries.push({ name: display, ats: 'greenhouse', board: b, url: 'https://boards-api.greenhouse.io/v1/boards/' + b + '/jobs' });
       tries.push({ name: display, ats: 'lever', board: b, url: 'https://api.lever.co/v0/postings/' + b + '?mode=json&limit=1' });
@@ -1340,7 +1369,7 @@ function findEmployers_(seconds) {
       ct.sheet.appendRow([t.name, t.ats, t.board, '', 'found automatically']);
       added++;
     });
-    batch.forEach(function (t) { if (checked.indexOf(t.name) < 0 && batch[batch.length - 1].name !== t.name) checked.push(t.name); });
+    batch.forEach(function (t) { if (checked.indexOf(idOf(t.name)) < 0 && batch[batch.length - 1].name !== t.name) checked.push(idOf(t.name)); });
   }
   if (i >= tries.length) {
     checked = [];
@@ -1348,7 +1377,7 @@ function findEmployers_(seconds) {
     props.setProperty('EMPLOYERS_LIST', employersKey_());  // this version of the list is done
   }
   props.setProperty('EMPLOYERS_CHECKED', JSON.stringify(checked));
-  log_('FIND_EMPLOYERS', 'checked ' + CANDIDATE_EMPLOYERS.length + ' employers, added ' + added + ' job boards: ' + Object.keys(found).join(', '));
+  log_('FIND_EMPLOYERS', 'checked ' + everyone.length + ' employers, added ' + added + ' job boards: ' + Object.keys(found).join(', '));
   return added;
 }
 
@@ -1375,7 +1404,7 @@ function findJobs() {
   var companies = [];
   ct.rows.forEach(function (r, i) { if (r[0] && r[1] && r[2] && !/^not found/.test(r[4])) companies.push({ r: r, row: i + 2 }); });
   var added = 0, matched = 0, already = 0, lowFit = 0, elsewhere = 0, lowPay = 0, errors = [], minFit = settings_().minFit;
-  var start = t0, resolved = 0, notOpen = {}, tooOld = 0, scams = 0, maxAge = settings_().maxAge, notAuto = 0, autoOnly = settings_().autoOnly;
+  var hiring = [], start = t0, resolved = 0, notOpen = {}, tooOld = 0, scams = 0, maxAge = settings_().maxAge, notAuto = 0, autoOnly = settings_().autoOnly;
   jobs.rows.forEach(function (r) { seen[seenKey_(r[jobs.col['Employer']], r[jobs.col['Title']])] = true; });
   // the job boards are searched in turn: a run that hits the time limit carries on from there next time
   var off = Number(props.getProperty('FIND_OFFSET') || 0) % Math.max(1, companies.length), skipped = 0;
@@ -1399,6 +1428,8 @@ function findJobs() {
     var feed = AGGREGATORS.indexOf(ats) >= 0;
     list.forEach(function (j) {
       if (!j.title || !j.url) return;
+      // any job a board shows open to Nigeria (any role, any date) marks its employer as one that hires here: searched from now on
+      if (feed && j.employer && j.employer !== c[0] && openToNigeria(j.location, j.text, j.workplaceType, j.title).ok === 'yes') hiring.push(j.employer);
       if (!postedWithin(j.posted, maxAge)) { tooOld++; return; }  // only jobs posted in the last 24 hours (Set maximum job age)
       var tm = matchTitle(j.title, p.titles);
       if (tm.match === 'none') return;
@@ -1426,6 +1457,7 @@ function findJobs() {
       added++;
     });
   });
+  rememberEmployers_(hiring);
   if (!skipped) props.setProperty('FIND_OFFSET', '0');
   else errors.push(skipped + ' source(s) left for the next run (time limit)');
   sortJobsByFit_();
