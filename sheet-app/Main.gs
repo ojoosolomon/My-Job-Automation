@@ -9,7 +9,7 @@
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-31d';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-10-31e';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
 var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back

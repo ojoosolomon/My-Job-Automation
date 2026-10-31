@@ -6,7 +6,8 @@
 var ROLE_FAMILY = {  // "analyst" and "expert" titles are not in your role buckets: they match only word for word
   specialist: 'ic', associate: 'ic', coordinator: 'ic', officer: 'ic', administrator: 'ic', generalist: 'ic',
   bookkeeper: 'ic', writer: 'ic', assistant: 'ic', representative: 'ic', agent: 'ic',
-  advocate: 'ic', rep: 'ic', manager: 'mgmt', lead: 'mgmt', supervisor: 'mgmt', head: 'mgmt'
+  advocate: 'ic', rep: 'ic', trainer: 'ic', annotator: 'ic', labeler: 'ic', evaluator: 'ic', rater: 'ic', moderator: 'ic',
+  receptionist: 'ic', secretary: 'ic', clerk: 'ic', executive: 'ic', manager: 'mgmt', lead: 'mgmt', supervisor: 'mgmt', head: 'mgmt'
 };
 // What a title is about. Two titles of the same family (e.g. "Executive Assistant" and "Virtual Assistant") that share
 // one of these count as similar.
@@ -16,9 +17,11 @@ var CONCEPTS = {
   operations: ['operations', 'ops', 'business', 'workflow', 'process', 'project', 'program', 'coordination',
     'implementation', 'delivery', 'strategy'],
   finance: ['finance', 'financial', 'bookkeeping', 'bookkeeper', 'accounts', 'payable', 'receivable', 'payroll', 'billing',
-    'reconciliation', 'invoicing'],
+    'reconciliation', 'invoicing', 'credit', 'loan', 'loans', 'collections', 'recovery', 'lending', 'relationship'],
+  data: ['annotation', 'annotator', 'labeling', 'labelling', 'data', 'trainer', 'training', 'evaluator', 'evaluation', 'rater',
+    'quality', 'moderator', 'moderation', 'content'],
   support: ['customer', 'client', 'support', 'service', 'success', 'experience', 'helpdesk', 'care', 'onboarding',
-    'happiness', 'cx'],
+    'happiness', 'cx', 'community', 'chat', 'call', 'contact', 'center', 'centre', 'agent', 'desk', 'front'],
   automation: ['automation', 'ai', 'workflow', 'nocode', 'zapier', 'integration', 'integrations', 'systems', 'prompt'],
   content: ['resume', 'content', 'writer', 'writing', 'career', 'documentation']
 };
@@ -560,7 +563,7 @@ if (typeof module !== 'undefined') {
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-31d';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-10-31e';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
 var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back
