@@ -203,3 +203,10 @@ assert.deepEqual(L.verifyAnswers([{ question: mq[0].question, kind: 'fact', answ
   { question: mq[1].question, kind: 'fact', answer: 'no experience', evidence: '' }], mq, 'cv'),
   { 'Experience supporting macOS?': 'None: I have not supported macOS' });
 console.log('none-choice ok');
+
+// EMEA and time zones in a title are not a reason to skip
+assert.equal(L.openToNigeria('Remote', '', '', 'Customer Support Specialist (EMEA)').ok, 'review');
+assert.equal(L.openToNigeria('Remote', '', '', 'Executive Assistant - EST hours').ok, 'review');
+assert.equal(L.openToNigeria('Remote - Germany', '', '', 'Support Specialist (EMEA)').ok, 'no');
+assert.equal(L.openToNigeria('Remote', '', '', 'Support Specialist (US)').ok, 'no');
+console.log('EMEA titles ok');

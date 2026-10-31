@@ -9,7 +9,7 @@
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-31e';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-10-31f';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
 var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back
@@ -910,12 +910,14 @@ function findJobs() {
   if (!skipped) props.setProperty('FIND_OFFSET', '0');
   else errors.push(skipped + ' source(s) left for the next run (time limit)');
   sortJobsByFit_();
-  log_('FIND_JOBS', 'sources ' + companies.length + ', matches at ' + minFit + '%+ fit: ' + matched + ' (new ' + added +
-    ', already in Jobs ' + already + '); below ' + minFit + '% not listed: ' + lowFit + '; not open to Nigeria: ' + elsewhere +
-    (elsewhere ? ' (' + Object.keys(notOpen).map(function (k) { return k + ' ' + notOpen[k]; }).join(', ') + ')' : '') +
-    '; salary below ' + (p.salaryMin || '-') + ': ' + lowPay + '; posted more than ' + maxAge + ' h ago or no date: ' + tooOld +
-    '; possible scams skipped: ' + scams + (autoOnly ? '; not automatically appliable (auto-only mode): ' + notAuto : '') +
-    (errors.length ? '; sources with problems: ' + errors.join('; ') : ''));
+  // the counts first (the Log cell is cut at 1,000 characters), then the details
+  log_('FIND_JOBS', 'NEW LISTED: ' + added + ' | matches ' + matched + ' (already in Jobs ' + already +
+    (autoOnly ? ', not automatically appliable ' + notAuto : '') + ') | not open to Nigeria ' + elsewhere + ' | older than ' + maxAge +
+    ' h or no date ' + tooOld + ' | below ' + minFit + '% fit ' + lowFit + ' | possible scams ' + scams + ' | pay below minimum ' + lowPay +
+    ' | sources ' + companies.length + (errors.length ? ' (' + errors.length + ' with problems)' : '') +
+    (elsewhere ? ' || not open to Nigeria: ' + Object.keys(notOpen).sort(function (a, b) { return notOpen[b] - notOpen[a]; })
+      .map(function (k) { return k + ' ' + notOpen[k]; }).join(', ') : '') +
+    (errors.length ? ' || sources with problems: ' + errors.join('; ') : ''));
   return added;
 }
 

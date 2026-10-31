@@ -75,10 +75,10 @@ assert.equal(cs.source, 'Remotive: customer support');
 assert(!got.some(r => r.title === 'Virtual Assistant' || r.title === 'Operations Coordinator' || r.title === 'Customer Support Specialist' && r.employer === 'Acme'),
   'US-only, "authorized to work in the United States" and on-site jobs are not listed');
 assert.equal(got.filter(r => r.title === 'Executive Assistant').length, 1, 'the same job from two boards is listed once');
-assert(/not open to Nigeria: 4/.test(log.rows[log.rows.length - 1][2]), log.rows[log.rows.length - 1][2]);
+assert(/not open to Nigeria 4/.test(log.rows.filter(r => r[1] === 'FIND_JOBS')[0][2]), log.rows.filter(r => r[1] === 'FIND_JOBS')[0][2]);
 assert(!got.some(r => /II$|III$/.test(r.title) && r.title !== 'Executive Assistant II'),
   'posted in 2023, 30 hours ago, or with no posting date (only an "updated" date): not listed');
-assert(/posted more than 24 h ago or no date: 3/.test(log.rows[log.rows.length - 1][2]), log.rows[log.rows.length - 1][2]);
+assert(/older than 24 h or no date 3/.test(log.rows.filter(r => r[1] === 'FIND_JOBS')[0][2]), log.rows.filter(r => r[1] === 'FIND_JOBS')[0][2]);
 assert(companies.rows.some(r => r[2] === 'search:executive assistant' && r[4] && /^(ok|not found)|added/.test(r[4]) || r[2] === 'search:executive assistant'),
   'job sources new in this version are added to an existing Companies tab');
 // out-of-scope jobs are deleted and never listed again

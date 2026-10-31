@@ -29,7 +29,8 @@ var NEGATIVE_TITLE = ['engineer', 'developer', 'software', 'sales', 'marketing',
   'designer', 'director', 'vp', 'vice', 'chief', 'principal', 'teacher', 'tutor', 'translator', 'recruiter', 'trader',
   'analyst', 'flight', 'procurement', 'sql', 'edi', 'claims', 'fp', 'actuarial', 'underwriter', 'pilot', 'mechanic'];
 // A region in the title ("Support Specialist - LATAM", "Executive Assistant (UK)") limits the job to that region.
-var TITLE_REGION_CASE = /(^|[\s(\[,\/-])(LATAM|LatAm|APAC|EMEA|NAMER|NA|EU|UK|US|USA|U\.S\.|ANZ|DACH|CET|EST|PST)($|[\s)\],\/-])/;
+// (EMEA includes Africa, and a time zone like EST is about working hours, which you can do from Nigeria: neither is a reason to skip)
+var TITLE_REGION_CASE = /(^|[\s(\[,\/-])(LATAM|LatAm|APAC|NAMER|EU|UK|US|USA|U\.S\.|ANZ|DACH)($|[\s)\],\/-])/;
 var TITLE_REGION = /\b(latin america|north america|americas|canada|europe|india|philippines|brazil|mexico|germany|france|spain|australia|japan|nordics|united states|united kingdom|south africa|kenya|egypt|poland|netherlands|zurich|london|berlin|toronto|new york|singapore)\b/i;
 // What may be left in a location after "Remote" without naming a place.
 var LOCATION_FILLER = /\b(remote|flexible|full[- ]?time|part[- ]?time|contract(or)?|permanent|temporary|freelance|optional|home|based|first|only|friendly|team|company|any|location|work|from|job|position|opportunity|role|global|distributed|virtual|telecommute|wfh|and|or|in|the|of|us)\b/ig;
@@ -120,6 +121,10 @@ function openToNigeria(location, text, workplaceType, title) {
   var locAfrica = OK_AFRICA.test(loc.replace(/south africa/ig, ''));
   if (OK_NIGERIA.test(loc)) return { ok: 'yes', why: 'Location includes Nigeria: ' + loc.slice(0, 80) };
   if (locAfrica) return { ok: 'yes', why: 'Location includes Africa: ' + loc.slice(0, 80) };
+  if (/\bEMEA\b/i.test(tl)) {  // "Support Specialist (EMEA)": Europe, Middle East and Africa may include Nigeria; Gemini checks
+    var lp = loc.replace(/\bemea\b/ig, ' ').replace(/\bremote\b/ig, ' ');
+    if (!PLACES.test(lp) && !OTHER_AFRICAN.test(lp)) return { ok: 'review', why: 'EMEA role: may include Nigeria' };
+  }
   if (OK_WORLD.test(loc) && !PLACES.test(loc.replace(OK_WORLD, ' '))) return { ok: 'yes', why: 'Open worldwide: ' + loc.slice(0, 80) };
   if (OTHER_AFRICAN.test(loc)) return { ok: 'no', why: 'Only open to ' + loc.slice(0, 80) };
   var places = loc.replace(/\bremote\b/ig, ' ').replace(OK_WORLD, ' ');

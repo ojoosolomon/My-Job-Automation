@@ -30,7 +30,8 @@ var NEGATIVE_TITLE = ['engineer', 'developer', 'software', 'sales', 'marketing',
   'designer', 'director', 'vp', 'vice', 'chief', 'principal', 'teacher', 'tutor', 'translator', 'recruiter', 'trader',
   'analyst', 'flight', 'procurement', 'sql', 'edi', 'claims', 'fp', 'actuarial', 'underwriter', 'pilot', 'mechanic'];
 // A region in the title ("Support Specialist - LATAM", "Executive Assistant (UK)") limits the job to that region.
-var TITLE_REGION_CASE = /(^|[\s(\[,\/-])(LATAM|LatAm|APAC|EMEA|NAMER|NA|EU|UK|US|USA|U\.S\.|ANZ|DACH|CET|EST|PST)($|[\s)\],\/-])/;
+// (EMEA includes Africa, and a time zone like EST is about working hours, which you can do from Nigeria: neither is a reason to skip)
+var TITLE_REGION_CASE = /(^|[\s(\[,\/-])(LATAM|LatAm|APAC|NAMER|EU|UK|US|USA|U\.S\.|ANZ|DACH)($|[\s)\],\/-])/;
 var TITLE_REGION = /\b(latin america|north america|americas|canada|europe|india|philippines|brazil|mexico|germany|france|spain|australia|japan|nordics|united states|united kingdom|south africa|kenya|egypt|poland|netherlands|zurich|london|berlin|toronto|new york|singapore)\b/i;
 // What may be left in a location after "Remote" without naming a place.
 var LOCATION_FILLER = /\b(remote|flexible|full[- ]?time|part[- ]?time|contract(or)?|permanent|temporary|freelance|optional|home|based|first|only|friendly|team|company|any|location|work|from|job|position|opportunity|role|global|distributed|virtual|telecommute|wfh|and|or|in|the|of|us)\b/ig;
@@ -121,6 +122,10 @@ function openToNigeria(location, text, workplaceType, title) {
   var locAfrica = OK_AFRICA.test(loc.replace(/south africa/ig, ''));
   if (OK_NIGERIA.test(loc)) return { ok: 'yes', why: 'Location includes Nigeria: ' + loc.slice(0, 80) };
   if (locAfrica) return { ok: 'yes', why: 'Location includes Africa: ' + loc.slice(0, 80) };
+  if (/\bEMEA\b/i.test(tl)) {  // "Support Specialist (EMEA)": Europe, Middle East and Africa may include Nigeria; Gemini checks
+    var lp = loc.replace(/\bemea\b/ig, ' ').replace(/\bremote\b/ig, ' ');
+    if (!PLACES.test(lp) && !OTHER_AFRICAN.test(lp)) return { ok: 'review', why: 'EMEA role: may include Nigeria' };
+  }
   if (OK_WORLD.test(loc) && !PLACES.test(loc.replace(OK_WORLD, ' '))) return { ok: 'yes', why: 'Open worldwide: ' + loc.slice(0, 80) };
   if (OTHER_AFRICAN.test(loc)) return { ok: 'no', why: 'Only open to ' + loc.slice(0, 80) };
   var places = loc.replace(/\bremote\b/ig, ' ').replace(OK_WORLD, ' ');
@@ -563,7 +568,7 @@ if (typeof module !== 'undefined') {
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-31e';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-10-31f';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
 var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back
@@ -1464,12 +1469,14 @@ function findJobs() {
   if (!skipped) props.setProperty('FIND_OFFSET', '0');
   else errors.push(skipped + ' source(s) left for the next run (time limit)');
   sortJobsByFit_();
-  log_('FIND_JOBS', 'sources ' + companies.length + ', matches at ' + minFit + '%+ fit: ' + matched + ' (new ' + added +
-    ', already in Jobs ' + already + '); below ' + minFit + '% not listed: ' + lowFit + '; not open to Nigeria: ' + elsewhere +
-    (elsewhere ? ' (' + Object.keys(notOpen).map(function (k) { return k + ' ' + notOpen[k]; }).join(', ') + ')' : '') +
-    '; salary below ' + (p.salaryMin || '-') + ': ' + lowPay + '; posted more than ' + maxAge + ' h ago or no date: ' + tooOld +
-    '; possible scams skipped: ' + scams + (autoOnly ? '; not automatically appliable (auto-only mode): ' + notAuto : '') +
-    (errors.length ? '; sources with problems: ' + errors.join('; ') : ''));
+  // the counts first (the Log cell is cut at 1,000 characters), then the details
+  log_('FIND_JOBS', 'NEW LISTED: ' + added + ' | matches ' + matched + ' (already in Jobs ' + already +
+    (autoOnly ? ', not automatically appliable ' + notAuto : '') + ') | not open to Nigeria ' + elsewhere + ' | older than ' + maxAge +
+    ' h or no date ' + tooOld + ' | below ' + minFit + '% fit ' + lowFit + ' | possible scams ' + scams + ' | pay below minimum ' + lowPay +
+    ' | sources ' + companies.length + (errors.length ? ' (' + errors.length + ' with problems)' : '') +
+    (elsewhere ? ' || not open to Nigeria: ' + Object.keys(notOpen).sort(function (a, b) { return notOpen[b] - notOpen[a]; })
+      .map(function (k) { return k + ' ' + notOpen[k]; }).join(', ') : '') +
+    (errors.length ? ' || sources with problems: ' + errors.join('; ') : ''));
   return added;
 }
 

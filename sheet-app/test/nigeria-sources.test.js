@@ -84,5 +84,5 @@ store.AUTO_ONLY = 'on';
 api.findJobs();
 const auto = jobs.rows.slice(1).map(r => r[col('Employer')]).sort();
 assert.deepEqual(auto, ['Acme Nigeria Limited', 'Kudi Co'], JSON.stringify(auto));
-assert(/not automatically appliable \(auto-only mode\): 1/.test(log.rows.filter(r => r[1] === 'FIND_JOBS').pop()[2]));
+assert(/not automatically appliable 1/.test(log.rows.filter(r => r[1] === 'FIND_JOBS').pop()[2]));
 console.log('Nigerian sources tests passed');
