@@ -568,7 +568,7 @@ if (typeof module !== 'undefined') {
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-10-31f';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-11-01a';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
 var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back
@@ -596,7 +596,8 @@ var ATS_HOSTS = [[/greenhouse\.io/, 'greenhouse'], [/jobs\.lever\.co/, 'lever'],
   [/jobs\.jobvite\.com/, 'jobvite'], [/careers-page\.com/, 'manatal'], [/freshteam\.com/, 'freshteam'], [/homerun\.co/, 'homerun'],
   [/polymer\.co/, 'polymer'], [/comeet\.(com|co)/, 'comeet']];
 /** Auto-only mode (on by default): only jobs the applier can send by itself are listed, prepared and applied to. */
-function autoOk_(ats, url) { return ats === 'email' || (AUTO_ATS.indexOf(ats) >= 0 && canTry_(ats, url)); }
+// (an employer careers page that needs no account counts: the applier fills it, and stops only on a login or CAPTCHA)
+function autoOk_(ats, url) { return ats === 'email' || canTry_(ats, url); }
 // Sites that need an account and login: never filled in automatically (you apply there yourself).
 var LOGIN_HOSTS = /(myworkdayjobs|workday|icims|taleo|successfactors|oraclecloud|linkedin|indeed|glassdoor|wellfound|angel\.co|ultipro|ukg|paylocity|adp\.com|brassring|avature|phenompeople|jobvite\.com\/[^\/]+\/login|ziprecruiter|upwork|fiverr|freelancer\.com)/i;
 /**
@@ -1313,16 +1314,16 @@ function rememberEmployers_(names) {
   if (!names.length) return 0;
   var props = PropertiesService.getScriptProperties(), list = [];
   try { list = JSON.parse(props.getProperty('DISCOVERED_EMPLOYERS') || '[]'); } catch (e) { list = []; }
-  var have = {}, n = 0;
+  var have = {}, n = 0, added = [];
   list.forEach(function (x) { have[x.toLowerCase()] = true; });
   names.forEach(function (x) {
-    x = String(x || '').replace(/[^\w&.' -]/g, '').trim().slice(0, 40);
+    x = String(x || '').replace(/[^\w&.' -]/g, '').replace(/,?\s+(inc|llc|ltd|limited|gmbh|corp)\.?$/i, '').trim().slice(0, 40);
     if (x.length < 2 || have[x.toLowerCase()]) return;
-    have[x.toLowerCase()] = true; list.push(x); n++;
+    have[x.toLowerCase()] = true; list.push(x); added.push(x); n++;
   });
   while (JSON.stringify(list).length > 8000) list.shift();  // a stored setting holds 9 KB
   props.setProperty('DISCOVERED_EMPLOYERS', JSON.stringify(list));
-  if (n) log_('EMPLOYERS_DISCOVERED', n + ' new employer(s) hiring in Nigeria/Africa/worldwide; their job pages are looked up next: ' + names.slice(0, 30).join(', '));
+  if (n) log_('EMPLOYERS_DISCOVERED', n + ' new employer(s) seen hiring in Nigeria/Africa/worldwide; their job pages are looked up next: ' + added.join(', '));
   return n;
 }
 
@@ -1412,6 +1413,7 @@ function findJobs() {
   var companies = [];
   ct.rows.forEach(function (r, i) { if (r[0] && r[1] && r[2] && !/^not found/.test(r[4])) companies.push({ r: r, row: i + 2 }); });
   var added = 0, matched = 0, already = 0, lowFit = 0, elsewhere = 0, lowPay = 0, errors = [], minFit = settings_().minFit;
+  var undated = undatedJobs_(), newUndated = [], baselineAll = undated.__empty;
   var hiring = [], start = t0, resolved = 0, notOpen = {}, tooOld = 0, scams = 0, maxAge = settings_().maxAge, notAuto = 0, autoOnly = settings_().autoOnly;
   jobs.rows.forEach(function (r) { seen[seenKey_(r[jobs.col['Employer']], r[jobs.col['Title']])] = true; });
   // the job boards are searched in turn: a run that hits the time limit carries on from there next time
@@ -1432,13 +1434,21 @@ function findJobs() {
       if (/HTTP 404/.test(e.message)) ct.sheet.getRange(co.row, 5).setValue('not found (board moved or renamed)');
       return;
     }
+    var searchedBefore = /^ok:/.test(String(c[4])) && !baselineAll;  // first search of a source: its undated jobs are a baseline
     ct.sheet.getRange(co.row, 5).setValue('ok: ' + list.length + ' open jobs (' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'd MMM HH:mm') + ')');
     var feed = AGGREGATORS.indexOf(ats) >= 0;
     list.forEach(function (j) {
       if (!j.title || !j.url) return;
       // any job a board shows open to Nigeria (any role, any date) marks its employer as one that hires here: searched from now on
       if (feed && j.employer && j.employer !== c[0] && openToNigeria(j.location, j.text, j.workplaceType, j.title).ok === 'yes') hiring.push(j.employer);
-      if (!postedWithin(j.posted, maxAge)) { tooOld++; return; }  // only jobs posted in the last 24 hours (Set maximum job age)
+      var when = postedDate(j.posted);
+      if (!when) {  // no posting date given: counted from the first time the search saw the job (old ones form a baseline)
+        var uk = 'U:' + (j.id || hashOf_(j.url).slice(0, 16));
+        if (!(uk in undated)) { undated[uk] = searchedBefore ? Date.now() : 0; newUndated.push([uk, undated[uk] ? new Date(undated[uk]) : 'baseline']); }
+        when = undated[uk] ? new Date(undated[uk]) : null;
+        if (when) j.posted = when;
+      }
+      if (!when || !postedWithin(when, maxAge)) { tooOld++; return; }  // only jobs posted within the maximum job age
       var tm = matchTitle(j.title, p.titles);
       if (tm.match === 'none') return;
       var open = openToNigeria(j.location, j.text, j.workplaceType, j.title);  // only jobs that hire someone living in Nigeria
@@ -1465,6 +1475,7 @@ function findJobs() {
       added++;
     });
   });
+  saveUndated_(newUndated);
   rememberEmployers_(hiring);
   if (!skipped) props.setProperty('FIND_OFFSET', '0');
   else errors.push(skipped + ' source(s) left for the next run (time limit)');
@@ -1487,6 +1498,31 @@ function addNewSources_() {
   var add = STARTER_COMPANIES.filter(function (c) { return !have[c[1] + ':' + c[2]]; });
   add.forEach(function (c) { ct.sheet.appendRow(c.concat(['added by update'])); });
   if (add.length) log_('NEW_SOURCES', add.length + ' job source(s) added: ' + add.map(function (c) { return c[0]; }).join(', '));
+}
+
+/**
+ * Jobs whose source gives no posting date: {key: first seen (ms), 0 = already there at the first search}. Kept in a hidden
+ * "Undated jobs" tab. __empty is true the first time (then every undated job found is the baseline).
+ */
+function undatedJobs_() {
+  var ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName('Undated jobs'), out = {};
+  if (!sh) {
+    sh = ss.insertSheet('Undated jobs');
+    sh.getRange(1, 1, 1, 2).setValues([['Key', 'First seen']]);
+    try { sh.hideSheet(); } catch (e) { /* hiding is only for tidiness */ }
+  }
+  var n = sh.getLastRow();
+  if (n > 1) sh.getRange(2, 1, n - 1, 2).getValues().forEach(function (r) {
+    if (r[0]) out[String(r[0])] = r[1] instanceof Date ? r[1].getTime() : 0;
+  });
+  Object.defineProperty(out, '__empty', { value: n < 2, enumerable: false });
+  return out;
+}
+
+function saveUndated_(rows) {
+  if (!rows.length) return;
+  var sh = SpreadsheetApp.getActive().getSheetByName('Undated jobs');
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, 2).setValues(rows);
 }
 
 /** The same job posted on several boards: employer + title, ignoring case and punctuation. */

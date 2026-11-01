@@ -48,13 +48,17 @@ const profile = sheet([['Field', 'Value'], ['cv_text', 'Executive assistant. Cal
 const log = sheet([['Time', 'Event', 'Details']]), apps = sheet([['App ID', 'Job ID', 'Employer', 'Title', 'Job URL', 'Status', 'Result']]);
 const removed = sheet([['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason']]);
 const store = { MIN_FIT: '0', EMPLOYERS_SEARCHED: String(Date.now()), AUTO_ONLY: 'off' };
+const undatedRows = [['Key', 'First seen']];
+const undatedSheet = { getLastRow: () => undatedRows.length, hideSheet() {}, isSheetHidden: () => true,
+  getRange: (r, c, nr, nc) => ({ getValues: () => undatedRows.slice(r - 1, r - 1 + (nr || 1)).map(x => x.slice(c - 1, c - 1 + (nc || 2))),
+    setValues: (v) => v.forEach((x, k) => { undatedRows[r - 1 + k] = x; }) }) };
 const fetch = (url) => {
   const body = url === 'https://ngjobs.example/feed' ? rss : /widget\/accounts\/kudi\?/.test(url) ? JSON.stringify(workable) : pages[url];
   return { getResponseCode: () => body === undefined ? 404 : 200, getHeaders: () => ({}), getContentText: () => body || '' };
 };
 const env = {
   SpreadsheetApp: { getActive: () => ({ getSheetByName: (n) => ({ Jobs: jobs, Companies: companies, Profile: profile, Log: log,
-    Applications: apps, 'Removed jobs': removed })[n] }) },
+    Applications: apps, 'Removed jobs': removed, 'Undated jobs': undatedSheet })[n] }) },
   PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => store[k] || null, setProperty: (k, v) => { store[k] = v; } }) },
   UrlFetchApp: { fetch, fetchAll: (reqs) => reqs.map(r => fetch(r.url)) }, XmlService: { parse: xml },
   Utilities: { computeDigest: (a, t) => Array.from(Buffer.from(String(t)).slice(-32)), DigestAlgorithm: {}, Charset: {}, formatDate: () => '30 Oct 10:00' },

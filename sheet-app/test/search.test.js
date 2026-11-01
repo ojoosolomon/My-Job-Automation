@@ -48,10 +48,14 @@ const removed = { rows: removedRows, getLastRow: () => removedRows.length, getLa
   getRange: (r, c, nr, nc) => ({ setValues: (v) => { v.forEach((x, k) => { removedRows[r - 1 + k] = x; }); },
     getValues: () => removedRows.slice(r - 1, r - 1 + (nr || 1)).map(x => x.slice(c - 1, c - 1 + (nc || 6))), setFontWeight() {} }) };
 const apps = sheet([['App ID', 'Job ID', 'Employer', 'Title', 'Job URL', 'Status', 'Result']]);
+const undatedRows = [['Key', 'First seen']];
+const undatedSheet = { getLastRow: () => undatedRows.length, hideSheet() {}, isSheetHidden: () => true,
+  getRange: (r, c, nr, nc) => ({ getValues: () => undatedRows.slice(r - 1, r - 1 + (nr || 1)).map(x => x.slice(c - 1, c - 1 + (nc || 2))),
+    setValues: (v) => v.forEach((x, k) => { undatedRows[r - 1 + k] = x; }) }) };
 const fetch = (url) => ({ getResponseCode: () => (pages[url] || html[url]) ? 200 : 404, getHeaders: () => ({}),
   getContentText: () => pages[url] ? JSON.stringify(pages[url]) : (html[url] || '') });
 const env = {
-  SpreadsheetApp: { getActive: () => ({ getSheetByName: (n) => ({ Jobs: jobs, Companies: companies, Profile: profile, Log: log, Applications: apps, 'Removed jobs': removed })[n] }) },
+  SpreadsheetApp: { getActive: () => ({ getSheetByName: (n) => ({ Jobs: jobs, Companies: companies, Profile: profile, Log: log, Applications: apps, 'Removed jobs': removed, 'Undated jobs': undatedSheet })[n] }) },
   PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => store[k] || null, setProperty: (k, v) => { store[k] = v; } }) },
   UrlFetchApp: { fetch, fetchAll: (reqs) => reqs.map(r => fetch(r.url)) },
   Utilities: { computeDigest: (a, t) => Array.from(Buffer.from(String(t)).slice(-32)), DigestAlgorithm: {}, Charset: {}, formatDate: () => '2026-10-28' },
@@ -94,3 +98,12 @@ console.log('search rules tests passed');
 assert(JSON.parse(store.DISCOVERED_EMPLOYERS || '[]').includes('Globex'), store.DISCOVERED_EMPLOYERS);
 assert(!JSON.parse(store.DISCOVERED_EMPLOYERS || '[]').includes('Initech'), 'a USA-only employer is not');
 console.log('employer discovery from job boards ok');
+// a job with no posting date: the first search keeps it as a baseline (not listed); one that appears later counts as new
+assert(undatedRows.some(r => r[1] === 'baseline'), 'undated jobs found at the first search are the baseline');
+pages['https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true&pay_transparency=true'].jobs.push(
+  gh(9, 'Virtual Assistant III', 'Remote - Worldwide', { first_published: undefined }));
+companies.rows.forEach(r => { if (r[2] === 'acme') r[4] = 'ok: 8 open jobs'; });
+api.findJobs();
+assert(jobs.rows.some(r => r[col('Title')] === 'Virtual Assistant III'), 'a new undated job is listed');
+assert(!jobs.rows.some(r => r[col('Title')] === 'Operations Coordinator III'), 'the baseline one is not');
+console.log('undated jobs ok');
