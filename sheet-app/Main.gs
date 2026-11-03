@@ -9,7 +9,7 @@
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-11-03a';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-11-03b';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
 var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back
@@ -1389,8 +1389,10 @@ function settings_() {
   var props = PropertiesService.getScriptProperties();
   return { auto: props.getProperty('AUTO_APPLY') !== 'off', limit: Number(props.getProperty('DAILY_LIMIT') || 8),
     minFit: Number(props.getProperty('MIN_FIT') || 60), maxAge: Number(props.getProperty('MAX_AGE_HOURS') || 24),
-    autoOnly: props.getProperty('AUTO_ONLY') !== 'off',
-    manual: props.getProperty('AUTO_ONLY') !== 'off' ? 0 : Number(props.getProperty('MANUAL_LIMIT') || 4) };  // limit: sent automatically a day; manual: prepared for you a day
+    // auto-only is OFF by default: jobs the applier can send come first (up to `limit` a day), then the best ones you send
+    // yourself are prepared (up to `manual` a day, default 4)
+    autoOnly: props.getProperty('AUTO_ONLY') === 'on',
+    manual: props.getProperty('AUTO_ONLY') === 'on' ? 0 : Number(props.getProperty('MANUAL_LIMIT') || 4) };  // limit: sent automatically a day; manual: prepared for you a day
 }
 
 function sameDay_(a, b) {

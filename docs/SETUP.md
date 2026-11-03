@@ -139,7 +139,7 @@ every search and every prepare run. They are listed in a hidden **Removed jobs**
 it: right-click any tab name → **Show sheet** → Removed jobs). To delete them straight away: **Job Board → Remove skipped /
 out-of-scope jobs now**. Jobs that already have a real application are never deleted.
 
-**Auto-only mode (on by default).** Only jobs the applier can send by itself are listed in Jobs, prepared and applied
+**Auto-only mode (off by default; turn it on to send only automatic applications).** When on, only jobs the applier can send by itself are listed in Jobs, prepared and applied
 to: jobs on Greenhouse, Ashby, Workable, Lever, BambooHR, JazzHR, Breezy, Recruitee, SmartRecruiters, Teamtailor, Personio,
 Pinpoint, Rippling, Dover, Zoho Recruit, Jobvite, Manatal, Freshteam, Homerun, Polymer and Comeet, and jobs that ask for
 CVs by email at a company address. Employer career sites, Workday-type sites, personal email addresses and job-board links
