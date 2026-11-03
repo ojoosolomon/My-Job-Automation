@@ -80,3 +80,9 @@ def test_alternate_addresses():
                                 "job_url": "https://acme.com/careers/123"}, "https://boards.greenhouse.io/embed/job_app?for=acme&token=123")
     assert alt == ["https://job-boards.greenhouse.io/acme/jobs/123", "https://boards.greenhouse.io/acme/jobs/123", "https://acme.com/careers/123"]
     assert apply.alternate_urls({"apply_url": "https://jobs.lever.co/acme/1111-2222/apply"}, "x") == ["https://jobs.lever.co/acme/1111-2222"]
+
+
+def test_generic_attach_label_is_an_upload():
+    assert apply.GENERIC_UPLOAD.match(apply.norm("Attach"))
+    assert apply.GENERIC_UPLOAD.match(apply.norm("Attach, Dropbox, Google Drive or enter manually"))
+    assert not apply.GENERIC_UPLOAD.match(apply.norm("Writing sample"))

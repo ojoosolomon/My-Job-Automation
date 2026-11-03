@@ -76,6 +76,8 @@ ALLOWED_SUFFIXES = ALLOWED_SUFFIXES + ("smartrecruiters.com", "teamtailor.com", 
 # Sites that need an account and login: never filled in (the applier hands these to you).
 LOGIN_HOSTS = re.compile(r"(myworkdayjobs|workday|icims|taleo|successfactors|oraclecloud|linkedin|indeed|glassdoor|wellfound|angel\.co|"
                          r"ultipro|ukg|paylocity|adp\.com|brassring|avature|phenompeople|ziprecruiter|upwork|fiverr|freelancer\.com)", re.I)
+GENERIC_UPLOAD = re.compile(r"^(attach(ment)?s?|upload( a)?( file)?|choose( a)? file|browse|drop (files|file) here.*|file|document|"
+                            r"attach,? dropbox.*|\(unlabelled required field\))?$", re.I)
 SITE = []  # the employer's own careers site for the application being sent (its domain and sub-domains are allowed)
 
 
@@ -679,14 +681,20 @@ def fill_field(page, el, job: dict, files: dict, done_groups: set, log: dict | N
                            "multi": typ == "checkbox" and len(members) > 1}
         return detail
 
+    up = log.setdefault("uploaded", set())
+    # Greenhouse's newer forms label the CV upload just "Attach": a generic upload is the CV first, then the cover letter
+    if typ == "file" and kind not in ("resume", "cover") and GENERIC_UPLOAD.match(norm(label)):
+        kind = "resume" if "resume" not in up else "cover" if "cover" not in up else kind
     if kind == "resume":
         if typ == "file":
             el.set_input_files(str(files["resume"]))
+            up.add("resume")
             rec("(your approved resume PDF)")
         return None
     if kind == "cover":
         if typ == "file":
             el.set_input_files(str(files["cover"]))
+            up.add("cover")
             rec("(your approved cover letter PDF)")
             return None
         kind, values = "cover_text", [v for v in [job.get("answers", {}).get("cover_letter_body")] if v]

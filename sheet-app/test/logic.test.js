@@ -210,3 +210,8 @@ assert.equal(L.openToNigeria('Remote', '', '', 'Executive Assistant - EST hours'
 assert.equal(L.openToNigeria('Remote - Germany', '', '', 'Support Specialist (EMEA)').ok, 'no');
 assert.equal(L.openToNigeria('Remote', '', '', 'Support Specialist (US)').ok, 'no');
 console.log('EMEA titles ok');
+assert.equal(L.matchTitle('Senior Account Executive', ['Executive Assistant', 'Customer Success Associate']).match, 'none', 'sales, not EA');
+assert.equal(L.matchTitle('Executive Assistant to the CEO', ['Executive Assistant']).match, 'exact');
+const tw = L.QUESTION_BANK.find(b => /Twitter/.test(b.q));
+assert(new RegExp(tw.re, 'i').test('twitter / x profile') && new RegExp(tw.re, 'i').test('github') && !new RegExp(tw.re, 'i').test('linkedin profile'));
+console.log('sales titles and social profiles ok');

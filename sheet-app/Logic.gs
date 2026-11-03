@@ -6,7 +6,7 @@ var ROLE_FAMILY = {  // "analyst" and "expert" titles are not in your role bucke
   specialist: 'ic', associate: 'ic', coordinator: 'ic', officer: 'ic', administrator: 'ic', generalist: 'ic',
   bookkeeper: 'ic', writer: 'ic', assistant: 'ic', representative: 'ic', agent: 'ic',
   advocate: 'ic', rep: 'ic', trainer: 'ic', annotator: 'ic', labeler: 'ic', evaluator: 'ic', rater: 'ic', moderator: 'ic',
-  receptionist: 'ic', secretary: 'ic', clerk: 'ic', executive: 'ic', manager: 'mgmt', lead: 'mgmt', supervisor: 'mgmt', head: 'mgmt'
+  receptionist: 'ic', secretary: 'ic', clerk: 'ic', manager: 'mgmt', lead: 'mgmt', supervisor: 'mgmt', head: 'mgmt'
 };
 // What a title is about. Two titles of the same family (e.g. "Executive Assistant" and "Virtual Assistant") that share
 // one of these count as similar.
@@ -27,7 +27,8 @@ var CONCEPTS = {
 var NEGATIVE_TITLE = ['engineer', 'developer', 'software', 'sales', 'marketing', 'nurse', 'physician', 'rn', 'lpn', 'intern',
   'therapist', 'pharmacist', 'attorney', 'counsel', 'lawyer', 'scientist', 'accountant', 'cpa', 'driver', 'technician',
   'designer', 'director', 'vp', 'vice', 'chief', 'principal', 'teacher', 'tutor', 'translator', 'recruiter', 'trader',
-  'analyst', 'flight', 'procurement', 'sql', 'edi', 'claims', 'fp', 'actuarial', 'underwriter', 'pilot', 'mechanic'];
+  'analyst', 'flight', 'procurement', 'sql', 'edi', 'claims', 'fp', 'actuarial', 'underwriter', 'pilot', 'mechanic',
+  'account', 'bdr', 'sdr', 'closer', 'marketer', 'growth'];  // "Account Executive/Manager" are sales roles
 // A region in the title ("Support Specialist - LATAM", "Executive Assistant (UK)") limits the job to that region.
 // (EMEA includes Africa, and a time zone like EST is about working hours, which you can do from Nigeria: neither is a reason to skip)
 var TITLE_REGION_CASE = /(^|[\s(\[,\/-])(LATAM|LatAm|APAC|NAMER|EU|UK|US|USA|U\.S\.|ANZ|DACH)($|[\s)\],\/-])/;
@@ -515,6 +516,7 @@ var QUESTION_BANK = [
   { q: 'How would you like to be paid?', re: 'how (would|do) you (like|prefer|want) to (be paid|receive (payment|your pay|payments))|preferred (payment|payout) (method|platform|option)|payment (method|preference)|payout method', a: 'Direct payment to my USD (domiciliary) bank account', why: 'Your preference.' },
   { q: 'Are you comfortable with variable pay or commission?', re: 'variable (pay|compensation)|commission|bonus structure|on-target earnings|\\bote\\b', a: 'Yes', why: 'Default: please check.' },
   // contact and scheduling
+  { q: 'Twitter / X, Instagram, Facebook, TikTok or GitHub profile', re: '^(your )?(twitter|x\\.com|x \\/ twitter|twitter \\/ x|instagram|facebook|tiktok|github|dribbble|behance|personal website|website|blog)( (profile|url|handle|link|account))?\\??$|^(twitter|x) (profile|url|handle)', a: 'N/A', why: 'You have no such profile. Put yours here if you do.' },
   { q: 'Preferred method of contact', re: 'preferred (method|way|mode) of contact|how should we contact|best way to (reach|contact)', a: 'Email', why: 'Default.' },
   { q: 'Phone type', re: '^phone type|type of phone', a: 'Mobile', why: 'Default.' },
   { q: 'WhatsApp number', re: 'whatsapp', a: '{phone}', why: 'Your phone number.' },
