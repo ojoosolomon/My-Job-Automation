@@ -590,7 +590,7 @@ if (typeof module !== 'undefined') {
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-11-06a';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-11-06b';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
 var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back
@@ -944,9 +944,39 @@ var STARTER_COMPANIES = [
   ['HotNigerianJobs (Nigeria)', 'rss', 'https://www.hotnigerianjobs.com/feed/', 'hotnigerianjobs.com'],
   ['MyJobMag (Nigeria)', 'rss', 'https://www.myjobmag.com/feed', 'myjobmag.com'],
   ['NGCareers (Nigeria)', 'rss', 'https://ngcareers.com/feed', 'ngcareers.com'],
-  ['Jobs in Nigeria: Remotive search', 'remotive', 'search:nigeria', 'remotive.com']
+  ['Jobs in Nigeria: Remotive search', 'remotive', 'search:nigeria', 'remotive.com'],
+  // Workable's job search covers every employer that hires through Workable: all of them can be sent automatically
+  ['Workable search: virtual assistant (remote)', 'workablesearch', 'query=virtual+assistant&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: executive assistant (remote)', 'workablesearch', 'query=executive+assistant&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: administrative assistant (remote)', 'workablesearch', 'query=administrative+assistant&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: operations coordinator (remote)', 'workablesearch', 'query=operations+coordinator&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: operations associate (remote)', 'workablesearch', 'query=operations+associate&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: customer support (remote)', 'workablesearch', 'query=customer+support&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: customer success (remote)', 'workablesearch', 'query=customer+success&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: customer service (remote)', 'workablesearch', 'query=customer+service&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: client support (remote)', 'workablesearch', 'query=client+support&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: project coordinator (remote)', 'workablesearch', 'query=project+coordinator&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: bookkeeper (remote)', 'workablesearch', 'query=bookkeeper&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: finance operations (remote)', 'workablesearch', 'query=finance+operations&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: automation specialist (remote)', 'workablesearch', 'query=automation+specialist&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: ai trainer (remote)', 'workablesearch', 'query=ai+trainer&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: data annotation (remote)', 'workablesearch', 'query=data+annotation&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: content moderator (remote)', 'workablesearch', 'query=content+moderator&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: community support (remote)', 'workablesearch', 'query=community+support&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: office administrator (remote)', 'workablesearch', 'query=office+administrator&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: credit officer (remote)', 'workablesearch', 'query=credit+officer&workplace=remote', 'jobs.workable.com'],
+  ['Workable search: payroll (remote)', 'workablesearch', 'query=payroll&workplace=remote', 'jobs.workable.com'],
+  // more remote job feeds (a feed that does not work is marked in the Status column and skipped)
+  ['Jobspresso', 'rss', 'https://jobspresso.co/?feed=job_feed', 'jobspresso.co'],
+  ['Remote.co', 'rss', 'https://remote.co/remote-jobs/feed/', 'remote.co'],
+  ['Remote OK: customer support', 'rss', 'https://remoteok.com/remote-customer-support-jobs.rss', 'remoteok.com'],
+  ['Remote OK: non-tech', 'rss', 'https://remoteok.com/remote-non-tech-jobs.rss', 'remoteok.com'],
+  ['We Work Remotely: all jobs', 'rss', 'https://weworkremotely.com/remote-jobs.rss', 'weworkremotely.com'],
+  ['Working Nomads: admin', 'rss', 'https://www.workingnomads.com/jobsrss?category=administration', 'workingnomads.com'],
+  ['Working Nomads: customer success', 'rss', 'https://www.workingnomads.com/jobsrss?category=customer-success', 'workingnomads.com'],
+  ['Himalayas: RSS', 'rss', 'https://himalayas.app/jobs/rss', 'himalayas.app']
 ];
-var AGGREGATORS = ['remotive', 'himalayas', 'jobicy', 'remoteok', 'weworkremotely', 'workingnomads', 'arbeitnow', 'rss'];
+var AGGREGATORS = ['remotive', 'himalayas', 'jobicy', 'remoteok', 'weworkremotely', 'workingnomads', 'arbeitnow', 'rss', 'workablesearch'];
 
 function stripHtml_(html) {
   return String(html || '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"')
@@ -1111,6 +1141,23 @@ function fetchFeed_(ats, board) {
         location: where.trim() || 'Nigeria (location not stated)', url: x.link, apply: x.link, text: t + '\n' + text,
         posted: x.date ? new Date(x.date) : '', salary: null };
     });
+  }
+  if (ats === 'workablesearch') {  // Workable's public job search (jobs.workable.com), one query per row
+    var wd = getJson_('https://jobs.workable.com/api/v1/jobs?' + board);
+    var arr = wd.jobs || wd.results || wd.data || [];
+    return arr.map(function (j) {
+      var co = j.company || {}, loc = j.location || (j.locations || [])[0] || {};
+      var place = typeof loc === 'string' ? loc : [loc.city, loc.subregion || loc.region, loc.countryName || loc.country].filter(String).join(', ');
+      var remote = /remote/i.test(String(j.workplace || j.workplaceType || '')) || j.remote === true || j.telecommuting === true;
+      var sub = co.subdomain || co.slug || '', code = j.shortcode || j.code || '';
+      var view = j.url || (j.id ? 'https://jobs.workable.com/view/' + j.id : '');
+      return { id: 'ws-' + (j.id || code || hashOf_(view).slice(0, 12)), title: j.title, employer: co.title || co.name || '',
+        location: (remote ? 'Remote - ' : '') + (place || (remote ? 'not stated' : '')), workplaceType: remote ? 'remote' : '',
+        url: view || (sub && code ? 'https://apply.workable.com/' + sub + '/j/' + code + '/' : ''),
+        apply: sub && code ? 'https://apply.workable.com/' + sub + '/j/' + code + '/apply/' : view,
+        text: stripHtml_(j.description || j.descriptionHtml || j.summary || '') + (j.requirementsSection ? '\n' + stripHtml_(j.requirementsSection) : ''),
+        posted: j.created || j.createdAt || j.published || j.publishedOn || j.updated || '', salary: null };
+    }).filter(function (j) { return j.url; });
   }
   if (ats === 'workingnomads') {
     return getJson_('https://www.workingnomads.com/api/exposed_jobs/').map(function (j) {
@@ -1288,6 +1335,19 @@ var CANDIDATE_EMPLOYERS = [
   'Helium Health=heliumhealth', 'mPharma=mpharma', 'Jumia', 'Wave=wave|wavemobilemoney', 'Yassir', 'Sendwave',
   'M-KOPA=mkopa', 'Twiga', 'Lidya', 'Thepeer', 'Prospa', 'Sycamore', 'Seamless HR=seamlesshr', 'Workpay',
   'Semicolon Africa=semicolon', 'AltSchool Africa=altschool', 'Decagon', 'Treepz', 'Releaf', 'Vendease', 'Shuttlers', 'Duplo',
+  // remote staffing agencies and talent platforms that place people from Africa
+  'TalentQL', 'Gebeya', 'Shortlist', 'Remote Africa=remoteafrica', 'Workforce Africa=workforceafrica', 'Outsource Global=outsourceglobal',
+  'Sourcefit', 'Support Ninja=supportninja', 'SupportYourApp=supportyourapp', 'Peak Support=peaksupport', 'PartnerHero=partnerhero',
+  'Influx', 'Helpware', 'Remote Staff=remotestaff', 'MyOutDesk=myoutdesk', 'Cyberbacker', 'Virtual Gurus=virtualgurus', 'Hubstaff Talent=hubstafftalent',
+  'Talentspark', 'Ingressive for Good=ingressiveforgood', 'Moringa School=moringaschool', 
+  // customer-support and BPO companies that hire in Africa
+  'iSON Xperiences=isonxperiences|ison', 'CCI Global=cciglobal', 'Teleperformance', 'Concentrix', 'Majorel', 'Foundever', 'Sitel',
+  'Alorica', 'Startek', 'Transcom', 'Webhelp', 'Sutherland', 'TTEC=ttec', 'Conduent', 'Hinduja Global Solutions=hgs',
+  // AI-data, annotation and language companies that hire worldwide
+  'Sama', 'CloudFactory', 'Remotasks', 'Clickworker', 'OneForma', 'Prolific', 'Rev', 'Lionbridge', 'RWS', 'Centific', 'DataForce',
+  'Defined.ai=definedai', 'Surge AI=surgeai|surgehq', 'Labelbox', 'Snorkel AI=snorkelai', 'Handshake AI=handshake', 'Abacus.AI=abacusai', 'Pareto.AI=paretoai', 'Mindrift', 'xAI=xai', 'Anthropic', 'OpenAI', 'Perplexity',
+  // remote-first companies known for hiring worldwide
+  'Proton', 'Tuta', 'Nord Security=nordsecurity', 'Kaspersky', 'SUSE=suse', 'Red Hat=redhat', 'Brave',
   'Konga', 'Jiji', 'Bumpa', 'CredPal=credpal', 'Renmoney', 'FairMoney=fairmoney', 'TradeDepot=tradedepot', 'Omnibiz',
   'Lemonade Finance=lemonadefinance|lemfi', 'Afriex', 'Chowdeck', 'Reliance Health=reliancehealth|reliance-health', 'Bankly',
   'Klasha', 'Union54', 'Sabi=sabi|sabi-1', 'Mano', 'Spleet', 'Hydrogen Pay=hydrogen',
@@ -1394,11 +1454,12 @@ function findEmployers_(seconds) {
     var res = UrlFetchApp.fetchAll(batch.map(function (t) { return { url: t.url, muteHttpExceptions: true }; }));
     res.forEach(function (r, k) {
       var t = batch[k];
-      if (found[t.name] || r.getResponseCode() !== 200) return;
+      if (found[t.name] || have[t.ats + ':' + t.board] || r.getResponseCode() !== 200) return;  // never the same job page twice
       var n = 0;
       try { var d = JSON.parse(r.getContentText()); n = Array.isArray(d) ? d.length : (d.jobs || []).length; } catch (e) { return; }
       if (!n) return;
       found[t.name] = true;
+      have[t.ats + ':' + t.board] = true;
       ct.sheet.appendRow([t.name, t.ats, t.board, '', 'found automatically']);
       added++;
     });
