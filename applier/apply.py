@@ -78,6 +78,10 @@ LOGIN_HOSTS = re.compile(r"(myworkdayjobs|workday|icims|taleo|successfactors|ora
                          r"ultipro|ukg|paylocity|adp\.com|brassring|avature|phenompeople|ziprecruiter|upwork|fiverr|freelancer\.com)", re.I)
 GENERIC_UPLOAD = re.compile(r"^(attach(ment)?s?|upload( a)?( file)?|choose( a)? file|browse|drop (files|file) here.*|file|document|"
                             r"attach,? dropbox.*|\(unlabelled required field\))?$", re.I)
+# Job boards list jobs but are never the application itself: their forms are comments, job alerts or sign-ups.
+JOB_BOARDS = re.compile(r"(himalayas\.app|weworkremotely|remotive|jobicy|remoteok|workingnomads|arbeitnow|hotnigerianjobs|myjobmag|"
+                        r"ngcareers|jobberman|jobgurus|nigeriajob|careers24|ngojobsinafrica|jobzilla|brightermonday|fuzu\.com|"
+                        r"myjobsinnigeria|jobnetafrica)", re.I)
 SITE = []  # the employer's own careers site for the application being sent (its domain and sub-domains are allowed)
 
 
@@ -90,7 +94,7 @@ def site_domain(url: str) -> str:
 
 def allowed(url: str) -> bool:
     host = urlsplit(url).hostname or ""
-    if LOGIN_HOSTS.search(host):
+    if LOGIN_HOSTS.search(host) or JOB_BOARDS.search(host):
         return False
     return (host in ALLOWED_HOSTS or any(host == s or host.endswith("." + s) for s in ALLOWED_SUFFIXES)
             or any(host == d or host.endswith("." + d) for d in SITE))

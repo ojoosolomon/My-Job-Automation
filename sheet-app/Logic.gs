@@ -310,7 +310,24 @@ function matchEmail(email, apps) {
 }
 
 /**
- * Does the posting ask for applications by email? Returns {email, subjectRule} or null.
+ * Job sites behind Cloudflare hide email addresses ("[email protected]") and write the real one, encoded, into the page.
+ * Returns the HTML with every such address written out.
+ */
+function decodeCfEmails(html) {
+  var dec = function (hex) {
+    var key = parseInt(hex.slice(0, 2), 16), out = '';
+    for (var i = 2; i + 1 < hex.length; i += 2) out += String.fromCharCode(parseInt(hex.slice(i, i + 2), 16) ^ key);
+    return out;
+  };
+  return String(html || '')
+    .replace(/<a[^>]*href="[^"]*\/cdn-cgi\/l\/email-protection#([0-9a-fA-F]+)"[^>]*>[\s\S]*?<\/a>/g, function (m, h) { return ' ' + dec(h) + ' '; })
+    .replace(/<[a-z]+[^>]*data-cfemail="([0-9a-fA-F]+)"[^>]*>[\s\S]*?<\/[a-z]+>/g, function (m, h) { return ' ' + dec(h) + ' '; });
+}
+
+/**
+ * Does the posting ask for applications by email? Returns {email, subjectRule, subjectTitle} or null.
+ * subjectTitle: "use the job title as the subject" (done automatically); subjectRule: any other instruction (a reference
+ * code, a special subject...), which you follow yourself.
  * Only addresses next to apply/send/resume wording count; HR-accommodation, privacy and no-reply addresses are ignored.
  */
 function applyEmail(text) {
@@ -323,7 +340,10 @@ function applyEmail(text) {
     if (/accommodat|privacy|questions about|disabilit|unsubscribe|report/.test(ctx)) continue;
     if (/(send|email|e-mail|submit|forward|apply)[^.]{0,80}(resume|cv|cover letter|application)|(resume|cv|application)[^.]{0,60}(to|at)\s*$/.test(ctx.slice(0, ctx.length - addr.length - 60)) ||
         /(apply|applications?|resumes?|cvs?)\s+(to|at|via|by email)/.test(ctx)) {
-      return { email: addr, subjectRule: /subject (line|heading)|in the subject|reference (number|code)/i.test(t) };
+      var title = /(job title|position|role|vacancy|title of the (job|position|role))( you are applying for| applied for| of interest)?( should be)? as (the )?(e-?mail |mail )?subject|subject[^.]{0,30}(should be|must be|:)\s*(the )?(job title|position|role)( applied for)?/i.test(t);
+      var special = /reference (number|code)|ref(erence)?\s*(no\.?|code|#)|job (code|ref)|quote the/i.test(t) ||
+        (!title && /subject (line|heading)|in the subject|as (the )?subject/i.test(t));
+      return { email: addr, subjectRule: special, subjectTitle: title && !special };
     }
   }
   return null;
@@ -556,5 +576,5 @@ var QUESTION_BANK = [
 if (typeof module !== 'undefined') {
   module.exports = { matchTitle: matchTitle, openToNigeria: openToNigeria, numbersIn: numbersIn, checkPackage: checkPackage,
     answerFor: answerFor, workAuthorized: workAuthorized, classifyEmail: classifyEmail, matchEmail: matchEmail, applyEmail: applyEmail,
-    fitScore: fitScore, formFacts: formFacts, scamSigns: scamSigns, personalEmail: personalEmail, postedDate: postedDate, postedWithin: postedWithin, verifyAnswers: verifyAnswers, parseSalary: parseSalary, QUESTION_BANK: QUESTION_BANK };
+    fitScore: fitScore, formFacts: formFacts, decodeCfEmails: decodeCfEmails, scamSigns: scamSigns, personalEmail: personalEmail, postedDate: postedDate, postedWithin: postedWithin, verifyAnswers: verifyAnswers, parseSalary: parseSalary, QUESTION_BANK: QUESTION_BANK };
 }

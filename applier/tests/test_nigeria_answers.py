@@ -86,3 +86,10 @@ def test_generic_attach_label_is_an_upload():
     assert apply.GENERIC_UPLOAD.match(apply.norm("Attach"))
     assert apply.GENERIC_UPLOAD.match(apply.norm("Attach, Dropbox, Google Drive or enter manually"))
     assert not apply.GENERIC_UPLOAD.match(apply.norm("Writing sample"))
+
+
+def test_job_boards_are_never_filled():
+    apply.SITE.clear()
+    apply.SITE.append("hotnigerianjobs.com")
+    assert not apply.allowed("https://www.hotnigerianjobs.com/hotjobs/986049/x.html"), "a job board's comment form is not an application"
+    apply.SITE.clear()

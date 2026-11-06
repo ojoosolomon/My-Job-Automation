@@ -9,7 +9,7 @@
  */
 
 var COMPANY_COLS = ['Name', 'ATS', 'Board', 'Domain', 'Status'];
-var CODE_VERSION = '2026-11-03b';  // the web app reports this, so the Sheet can tell when its deployment is out of date
+var CODE_VERSION = '2026-11-06a';  // the web app reports this, so the Sheet can tell when its deployment is out of date
 var TAB = { PROFILE: 'Profile', COMPANIES: 'Companies', JOBS: 'Jobs', APPS: 'Applications', INBOX: 'Inbox', LOG: 'Log', ANSWERS: 'Answers',
   CANNOT: 'Cannot apply', PIPELINE: 'Pipeline', REMOVED: 'Removed jobs' };
 var REMOVED_COLS = ['Job URL', 'Key', 'Employer', 'Title', 'Removed on', 'Reason'];  // so removed jobs never come back
@@ -522,7 +522,7 @@ function fetchFeed_(ats, board) {
         it.getChildText('content', atom), date: it.getChildText('published', atom) || it.getChildText('updated', atom) };
     });
     return items.filter(function (x) { return x.t && x.link; }).map(function (x) {
-      var text = stripHtml_(x.d), t = String(x.t).trim();
+      var text = stripHtml_(decodeCfEmails(x.d)), t = String(x.t).trim();
       // "Job Title at Company" / "Company Recruitment for Job Title"; "Location: Lagos" in the text
       var at = t.match(/^(.+?)\s+at\s+(.+)$/), rec = t.match(/^(.+?)\s+(?:is )?(?:recruiting|recruitment|hiring|job recruitment)\s+(?:for\s+)?(?:an?\s+)?(.+)$/i);
       var where = (text.match(/\blocation\s*:?\s*([^\n.;|]{2,60})/i) || [])[1] || '';
@@ -563,7 +563,7 @@ function resolveApply_(url, text) {
   var first = openPage_(url);
   if (first.hit) return first.hit;
   // the page's own links, including those hidden in its code (JSON writes "https:\/\/..." with escaped slashes)
-  var html = String(first.html).replace(/\\u002[fF]/g, '/').replace(/\\\//g, '/').replace(/&amp;/g, '&');
+  var html = decodeCfEmails(first.html).replace(/\\u002[fF]/g, '/').replace(/\\\//g, '/').replace(/&amp;/g, '&');
   var links = html.match(/https?:\/\/[^"'\s<>\\]+/g) || [];
   for (var i = 0; i < links.length; i++) {
     var f = found(links[i]);
@@ -571,7 +571,8 @@ function resolveApply_(url, text) {
   }
   var mail = applyEmail(stripHtml_(html) + '\n' + String(text || ''));
   // a personal address (Gmail, Yahoo...) is never emailed automatically: you check the employer is real first
-  if (mail) return { apply: 'mailto:' + mail.email, ats: mail.subjectRule || personalEmail(mail.email) ? 'email-special' : 'email', board: '' };
+  if (mail) return { apply: 'mailto:' + mail.email + (mail.subjectTitle ? '?subject=JOB_TITLE' : ''),
+    ats: mail.subjectRule || personalEmail(mail.email) ? 'email-special' : 'email', board: '' };
   // the employer's own apply link (named like "applicationLink"/"applyUrl", or a link labelled Apply): follow it once
   var named = html.match(/"(?:applicationLink|applicationUrl|applyUrl|apply_url|externalApplyUrl|externalUrl|applyLink|redirectUrl)"\s*:\s*"(https?:\/\/[^"]+)"/);
   var labelled = html.match(/<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>(?:(?!<\/a>)[\s\S]){0,120}?\bapply\b/i);
@@ -605,7 +606,8 @@ function resolveApply_(url, text) {
   }
 }
 
-var BOARD_HOSTS = /^https?:\/\/([^\/]*\.)?(himalayas\.app|weworkremotely\.com|remotive\.com|jobicy\.com|remoteok\.com|remoteok\.io|workingnomads\.com|arbeitnow\.[a-z.]+)\//i;
+// Job boards: they list jobs but are never the application itself (their forms are comments, alerts or sign-ups)
+var BOARD_HOSTS = /^https?:\/\/([^\/]*\.)?(himalayas\.app|weworkremotely\.com|remotive\.com|jobicy\.com|remoteok\.com|remoteok\.io|workingnomads\.com|arbeitnow\.[a-z.]+|hotnigerianjobs\.com|myjobmag\.com|ngcareers\.com|jobberman\.com|jobgurus\.com\.ng|nigeriajob\.com|careers24\.com|ngojobsinafrica\.com|jobzilla\.ng|jobsinnigeria\.careers|brightermonday\.[a-z.]+|fuzu\.com|jobnetafrica\.com|myjobsinnigeria\.com|ngrguardiannews\.com)\//i;
 var JUNK_HOSTS = /^https?:\/\/([^\/]*\.)?(google|googleapis|gstatic|facebook|twitter|x\.com|linkedin|instagram|youtube|cloudflare|cloudfront|jsdelivr|unpkg|schema\.org|w3\.org|gravatar|amazonaws|imgix|cdn)[^\/]*\//i;
 
 /**
@@ -1922,7 +1924,7 @@ function prepareJob_(jobId) {
     'Keyword report': report.getUrl(), 'Fact check': problems.length ? 'NEEDS YOUR CHECK' : 'PASS',
     'Check details': problems.slice(0, 8).join('\n'), 'Package hash': hash, 'Decision': 'PENDING', 'Decision time': '',
     'Status': problems.length ? 'NEEDS YOUR CHECK' : 'READY FOR YOUR DECISION', 'Updated': new Date(),  // auto-apply picks it up
-    'Result': job.ats === 'email' ? 'If approved, it will be EMAILED from your Gmail to ' + String(job.apply).replace('mailto:', '') +
+    'Result': job.ats === 'email' ? 'If approved, it will be EMAILED from your Gmail to ' + String(job.apply).replace('mailto:', '').replace('?subject=JOB_TITLE', ' (subject: the job title)') +
       ' with the resume and cover letter attached.' : job.ats === 'email-special' ? 'Email application to ' +
       String(job.apply).replace('mailto:', '') + ': send it yourself from Gmail with the two PDFs attached (the posting has ' +
       'special instructions, or it is a personal address: check the employer is real first).' : ''
@@ -2422,7 +2424,8 @@ function sendEmailApplication_(appId) {
     }
     var jobs = table_(TAB.JOBS);
     var jr = jobs.rows[findRow_(jobs, 'Job ID', r[apps.col['Job ID']]) - 2];
-    var to = String(jr[jobs.col['Apply URL']]).replace('mailto:', '').trim();
+    var mailto = String(jr[jobs.col['Apply URL']]).replace('mailto:', '').trim();
+    var to = mailto.split('?')[0], useTitle = /subject=JOB_TITLE/.test(mailto);  // "use the job title as the subject"
     var resume = DriveApp.getFileById(fileId_(r[apps.col['Resume PDF']])).getBlob();
     var cover = DriveApp.getFileById(fileId_(r[apps.col['Cover letter PDF']])).getBlob();
     if (bytesHash_([resume, cover], jr[jobs.col['Job URL']] + '|' + jr[jobs.col['Apply URL']]) !== r[apps.col['Package hash']]) {
@@ -2437,7 +2440,7 @@ function sendEmailApplication_(appId) {
     try {
       MailApp.sendEmail({
         to: to, name: name, replyTo: p.email,
-        subject: 'Application for ' + title + ' — ' + name,
+        subject: useTitle ? String(title).replace(/\s*\((remote|hybrid|on-?site)\)\s*$/i, '').trim() : 'Application for ' + title + ' - ' + name,
         body: 'Dear ' + employer + ' Hiring Team,\n\nPlease find attached my resume and cover letter for the ' + title +
           ' position.\n\nThank you for your time and consideration.\n\nBest regards,\n' + name + '\n' +
           [p.phone, p.email].filter(String).join(' | '),

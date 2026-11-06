@@ -215,3 +215,12 @@ assert.equal(L.matchTitle('Executive Assistant to the CEO', ['Executive Assistan
 const tw = L.QUESTION_BANK.find(b => /Twitter/.test(b.q));
 assert(new RegExp(tw.re, 'i').test('twitter / x profile') && new RegExp(tw.re, 'i').test('github') && !new RegExp(tw.re, 'i').test('linkedin profile'));
 console.log('sales titles and social profiles ok');
+
+// Nigerian job sites: hidden (Cloudflare) addresses and "job title as subject"
+const enc = (addr, key) => key.toString(16).padStart(2, '0') + [...addr].map(c => (c.charCodeAt(0) ^ key).toString(16).padStart(2, '0')).join('');
+const page = 'Interested candidates should send their CV to <a href="/cdn-cgi/l/email-protection#' + enc('careers@bethetrends.ng', 0x3a) +
+  '">[email&#160;protected]</a> using the Job Title as the subject of the mail.';
+const ae = L.applyEmail(L.decodeCfEmails(page).replace(/<[^>]+>/g, ' '));
+assert.deepEqual([ae.email, ae.subjectTitle, ae.subjectRule], ['careers@bethetrends.ng', true, false]);
+assert.equal(L.applyEmail('Send your CV to jobs@acme.ng and quote the reference code ACM-12 in the subject line.').subjectRule, true);
+console.log('hidden emails and job-title subjects ok');

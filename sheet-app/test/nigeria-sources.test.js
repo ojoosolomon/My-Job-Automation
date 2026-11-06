@@ -20,7 +20,7 @@ const workable = { name: 'Kudi Co', jobs: [
     description: '<p>Coordinate operations remotely.</p>', created_at: recent.toISOString() },
   { title: 'Operations Coordinator II', shortcode: 'CD34', telecommuting: false, country: 'Nigeria', city: 'Lagos',
     url: 'https://apply.workable.com/kudi/j/CD34/', description: 'Office based.', created_at: recent.toISOString() }] };
-const pages = { 'https://ngjobs.example/va-1': 'Send your CV to careers@acme.ng with the job title as subject? No: just send it.' };
+const pages = { 'https://ngjobs.example/va-1': 'To apply, send your CV to careers@acme.ng.' };
 // a tiny XML reader standing in for Apps Script's XmlService
 function xml(text) {
   const el = (name, body) => ({ name, body,
